@@ -7,6 +7,10 @@
 #include <unistd.h>
 #include <3ds.h>
 
+#include "cmpblock_bin.h"
+
+extern u32 *__httpc_sharedmem_addr;
+
 void displaymessage_waitbutton()
 {
 	printf("\nPress the A button to continue.\n");
@@ -18,21 +22,77 @@ void displaymessage_waitbutton()
 	}
 }
 
-Result http_getactual_payloadurl(char *requrl)
+//This searches physmem for the page which starts with the data stored in cmpblock_bin. The first byte in cmpblock is XORed with 0x01 to avoid detecting the cmpblock in physmem.
+Result locate_sharedmem_linearaddr(u32 **linearaddr)
+{
+	u8 *tmpbuf;
+	u32 chunksize = 0x100000;
+	u32 linearpos, bufpos, size;
+	u32 i;
+	u32 xorval;
+	int found = 0;
+
+	*linearaddr = NULL;
+
+	tmpbuf = linearAlloc(chunksize);
+	if(tmpbuf==NULL)
+	{
+		printf("Failed to allocate mem for tmpbuf.\n");
+		return -1;
+	}
+
+	size = osGetMemRegionSize(MEMREGION_APPLICATION);
+
+	for(linearpos=0; linearpos<size; linearpos+= chunksize)
+	{
+		*linearaddr = (u32*)(0x30000000+linearpos);
+
+		memset(tmpbuf, 0, chunksize);
+		GSPGPU_FlushDataCache(tmpbuf, chunksize);
+
+		GX_TextureCopy(*linearaddr, 0, (u32*)tmpbuf, 0, chunksize, 0x8);
+		gspWaitForPPF();
+
+		for(bufpos=0; bufpos<chunksize; bufpos+= 0x1000)
+		{
+			found = 1;
+
+			for(i=0; i<cmpblock_bin_size; i++)
+			{
+				xorval = 0;
+				if(i==0)xorval = 1;
+
+				if(tmpbuf[bufpos + i] != (cmpblock_bin[i] ^ xorval))
+				{
+					found = 0;
+					break;
+				}
+			}
+
+			if(found)
+			{
+				*linearaddr = (u32*)(0x30000000+linearpos+bufpos);
+				break;
+			}
+		}
+		if(found)break;
+	}
+
+	linearFree(tmpbuf);
+
+	if(!found)return -1;
+
+	return 0;
+}
+
+Result http_haxx(char *requrl)
 {
 	Result ret=0;
-	u32 statuscode=0;
 	httpcContext context;
+	u32 *linearaddr = NULL;
 
 	ret = httpcOpenContext(&context, HTTPC_METHOD_POST, requrl, 1);
 	if(ret!=0)return ret;
-
-	ret = httpcAddRequestHeaderField(&context, "User-Agent", "ctr-httpwn/"VERSION);
-	if(ret!=0)
-	{
-		httpcCloseContext(&context);
-		return ret;
-	}
 
 	ret = httpcAddPostDataAscii(&context, "form_name", "form_value");
 	if(ret!=0)
@@ -41,26 +101,17 @@ Result http_getactual_payloadurl(char *requrl)
 		return ret;
 	}
 
-	ret = httpcBeginRequest(&context);
+	//Locate the physmem for the httpc sharedmem. With the current cmpblock, there can only be one POST struct that was ever written into sharedmem, with the name/value from above.
+	printf("Searching for the httpc sharedmem in physmem...\n");
+	ret = locate_sharedmem_linearaddr(&linearaddr);
 	if(ret!=0)
 	{
+		printf("Failed to locate the sharedmem in physmem.\n");
 		httpcCloseContext(&context);
 		return ret;
 	}
 
-	ret = httpcGetResponseStatusCode(&context, &statuscode, 0);
-	if(ret!=0)
-	{
-		httpcCloseContext(&context);
-		return ret;
-	}
-
-	if(statuscode!=200)
-	{
-		printf("Error: server returned HTTP statuscode %u.\n", (unsigned int)statuscode);
-		httpcCloseContext(&context);
-		return -2;
-	}
+	printf("Successfully located the linearaddr for sharedmem: 0x%08x.\n", (unsigned int)linearaddr);
 
 	httpcCloseContext(&context);
 
@@ -110,8 +161,8 @@ Result httpwn_setup()
 		return ret;
 	}
 
-	printf("Sending the HTTP request...\n");
-	ret = http_getactual_payloadurl("http://10.0.0.30/testpage");
+	printf("Preparing the haxx...\n");
+	ret = http_haxx("http://localhost/");//URL doesn't matter much since this won't actually be requested over the network.
 	httpcExit();
 	if(ret!=0)
 	{
