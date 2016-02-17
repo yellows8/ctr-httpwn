@@ -11,7 +11,7 @@
 
 extern u32 *__httpc_sharedmem_addr;
 
-void init_hax_sharedmem(u32 *tmpbuf);
+Result init_hax_sharedmem(u32 *tmpbuf);
 
 void displaymessage_waitbutton()
 {
@@ -89,6 +89,7 @@ Result locate_sharedmem_linearaddr(u32 **linearaddr)
 
 Result writehax_sharedmem_physmem(u32 *linearaddr)
 {
+	Result ret=0;
 	u32 chunksize = 0x1000;
 	u32 *tmpbuf;
 
@@ -107,7 +108,12 @@ Result writehax_sharedmem_physmem(u32 *linearaddr)
 	GX_TextureCopy(linearaddr, 0, tmpbuf, 0, chunksize, 0x8);
 	gspWaitForPPF();
 
-	init_hax_sharedmem(tmpbuf);
+	ret = init_hax_sharedmem(tmpbuf);
+	if(ret)
+	{
+		linearFree(tmpbuf);
+		return ret;
+	}
 
 	//Flush dcache for the modified sharedmem, then copy the data back into the sharedmem physmem.
 	GSPGPU_FlushDataCache(tmpbuf, chunksize);
@@ -236,7 +242,7 @@ int main(int argc, char **argv)
 
 	ret = httpwn_setup();
 
-	if(ret!=0)printf("An error occured. If this is an actual issue not related to user failure, please report this to here if it persists(or comment on an already existing issue if needed), with a screenshot: https://github.com/yellows8/ctr-httpwn /issues\n");
+	if(ret!=0)printf("An error occured. If this is an actual issue not related to user failure, please report this to here if it persists(or comment on an already existing issue if needed), with a screenshot: https://github.com/yellows8/ctr-httpwn/issues\n");
 
 	printf("Press the START button to exit.\n");
 	// Main loop
