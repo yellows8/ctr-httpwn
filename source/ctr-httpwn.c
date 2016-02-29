@@ -32,7 +32,7 @@ void displaymessage_waitbutton()
 	}
 }
 
-Result _HTTPC_CloseContext(Handle handle, Handle contextHandle, Handle *httpheap_sharedmem_handle, Handle *httpc_sslc_handle)
+Result _HTTPC_CloseContext(Handle handle, Handle contextHandle, Handle *httpheap_sharedmem_handle, Handle *ropvmem_sharedmem_handle, Handle *httpc_sslc_handle)
 {
 	u32* cmdbuf=getThreadCommandBuffer();
 
@@ -45,21 +45,22 @@ Result _HTTPC_CloseContext(Handle handle, Handle contextHandle, Handle *httpheap
 	if(cmdbuf[1]==0)
 	{
 		if(cmdbuf[0]!=0x00030044)return -1;//The ROP is supposed to return a custom cmdreply.
-		if(cmdbuf[2]!=0x0 || cmdbuf[4]!=0x10)return -1;
+		if(cmdbuf[2]!=(0x0 | ((0x2-1)<<26)) || cmdbuf[5]!=0x10)return -1;
 
 		if(httpheap_sharedmem_handle)*httpheap_sharedmem_handle = cmdbuf[3];
-		if(httpc_sslc_handle)*httpc_sslc_handle = cmdbuf[5];
+		if(ropvmem_sharedmem_handle)*ropvmem_sharedmem_handle = cmdbuf[4];
+		if(httpc_sslc_handle)*httpc_sslc_handle = cmdbuf[6];
 	}
 
 	return cmdbuf[1];
 }
 
-Result _httpcCloseContext(httpcContext *context, Handle *httpheap_sharedmem_handle, Handle *httpc_sslc_handle)
+Result _httpcCloseContext(httpcContext *context, Handle *httpheap_sharedmem_handle, Handle *ropvmem_sharedmem_handle, Handle *httpc_sslc_handle)
 {
 	Result ret=0;
 
 	svcCloseHandle(context->servhandle);
-	ret = _HTTPC_CloseContext(__httpc_servhandle, context->httphandle, httpheap_sharedmem_handle, httpc_sslc_handle);
+	ret = _HTTPC_CloseContext(__httpc_servhandle, context->httphandle, httpheap_sharedmem_handle, ropvmem_sharedmem_handle, httpc_sslc_handle);
 
 	return ret;
 }
@@ -172,8 +173,11 @@ Result http_haxx(char *requrl)
 	httpcContext context;
 	u32 *linearaddr = NULL;
 	Handle httpheap_sharedmem_handle=0;
+	Handle ropvmem_sharedmem_handle=0;
 	vu32 *httpheap_sharedmem = NULL;
 	u32 httpheap_sharedmem_size = 0x22000;
+	vu32 *ropvmem_sharedmem = NULL;
+	u32 ropvmem_sharedmem_size = 0x1000;
 	Handle httpc_sslc_handle = 0;
 
 	ret = httpcOpenContext(&context, HTTPC_METHOD_POST, requrl, 1);
@@ -208,7 +212,7 @@ Result http_haxx(char *requrl)
 	}
 
 	printf("Triggering the haxx...\n");
-	ret = _httpcCloseContext(&context, &httpheap_sharedmem_handle, &httpc_sslc_handle);
+	ret = _httpcCloseContext(&context, &httpheap_sharedmem_handle, &ropvmem_sharedmem_handle, &httpc_sslc_handle);
 	if(R_FAILED(ret))
 	{
 		printf("httpcCloseContext returned 0x%08x.\n", (unsigned int)ret);
@@ -223,6 +227,18 @@ Result http_haxx(char *requrl)
 	{
 		ret = -2;
 		svcCloseHandle(httpheap_sharedmem_handle);
+		svcCloseHandle(ropvmem_sharedmem_handle);
+		svcCloseHandle(httpc_sslc_handle);
+		return ret;
+	}
+
+	ropvmem_sharedmem = (vu32*)mappableAlloc(ropvmem_sharedmem_size);
+	if(ropvmem_sharedmem==NULL)
+	{
+		ret = -3;
+		mappableFree((void*)httpheap_sharedmem);
+		svcCloseHandle(httpheap_sharedmem_handle);
+		svcCloseHandle(ropvmem_sharedmem_handle);
 		svcCloseHandle(httpc_sslc_handle);
 		return ret;
 	}
@@ -233,13 +249,34 @@ Result http_haxx(char *requrl)
 		mappableFree((void*)httpheap_sharedmem);
 		httpheap_sharedmem = NULL;
 
+		svcCloseHandle(ropvmem_sharedmem_handle);
+		mappableFree((void*)ropvmem_sharedmem);
+		ropvmem_sharedmem = NULL;
+
 		svcCloseHandle(httpc_sslc_handle);
 
 		printf("svcMapMemoryBlock with the httpheap sharedmem failed: 0x%08x.\n", (unsigned int)ret);
 		return ret;
 	}
 
-	printf("Successfully mapped the httpheap sharedmem.\n");
+	if(R_FAILED(ret=svcMapMemoryBlock(ropvmem_sharedmem_handle, (u32)ropvmem_sharedmem, MEMPERM_READ | MEMPERM_WRITE, MEMPERM_READ | MEMPERM_WRITE)))
+	{
+		svcUnmapMemoryBlock(httpheap_sharedmem_handle, (u32)httpheap_sharedmem);
+		svcCloseHandle(httpheap_sharedmem_handle);
+		mappableFree((void*)httpheap_sharedmem);
+		httpheap_sharedmem = NULL;
+
+		svcCloseHandle(ropvmem_sharedmem_handle);
+		mappableFree((void*)ropvmem_sharedmem);
+		ropvmem_sharedmem = NULL;
+
+		svcCloseHandle(httpc_sslc_handle);
+
+		printf("svcMapMemoryBlock with the ropvmem sharedmem failed: 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
+
+	printf("Successfully mapped the httpheap+ropvmem sharedmem.\n");
 
 	printf("Initializing the haxx under the httpheap sharedmem...\n");
 	ret = setuphaxx_httpheap_sharedmem(httpheap_sharedmem, httpheap_sharedmem_size);
@@ -248,10 +285,14 @@ Result http_haxx(char *requrl)
 	if(ret==0)printf("Finalizing...\n");
 
 	svcUnmapMemoryBlock(httpheap_sharedmem_handle, (u32)httpheap_sharedmem);
-
 	svcCloseHandle(httpheap_sharedmem_handle);
 	mappableFree((void*)httpheap_sharedmem);
 	httpheap_sharedmem = NULL;
+
+	svcUnmapMemoryBlock(ropvmem_sharedmem_handle, (u32)httpheap_sharedmem);
+	svcCloseHandle(ropvmem_sharedmem_handle);
+	mappableFree((void*)ropvmem_sharedmem);
+	ropvmem_sharedmem = NULL;
 
 	svcCloseHandle(httpc_sslc_handle);
 
