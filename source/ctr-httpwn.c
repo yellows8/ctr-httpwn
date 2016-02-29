@@ -12,7 +12,13 @@
 extern Handle __httpc_servhandle;
 extern u32 *__httpc_sharedmem_addr;
 
+u8 *http_codebin_buf;
+u32 *http_codebin_buf32;
+u32 http_codebin_size;
+
 Result init_hax_sharedmem(u32 *tmpbuf);
+
+Result loadcodebin(u64 programid, FS_MediaType mediatype, u8 **codebin_buf, u32 *codebin_size);
 
 void displaymessage_waitbutton()
 {
@@ -278,6 +284,19 @@ Result httpwn_setup()
 		return -1;
 	}
 
+	http_codebin_buf = NULL;
+	http_codebin_buf32 = NULL;
+	http_codebin_size = 0;
+
+	ret = loadcodebin(http_sysmodule_titleid, MEDIATYPE_NAND, &http_codebin_buf, &http_codebin_size);
+	if(R_FAILED(ret))
+	{
+		printf("Failed to load the HTTP sysmodule codebin: 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
+
+	http_codebin_buf32 = (u32*)http_codebin_buf;
+
 	ret = httpcInit(0x1000);
 	if(ret!=0)
 	{
@@ -287,12 +306,15 @@ Result httpwn_setup()
 			printf("The HTTPC service is inaccessible. With the *hax payload this may happen if the process this app is running under doesn't have access to that service. Please try rebooting the system, boot *hax payload, then directly launch the app.\n");
 		}
 
+		free(http_codebin_buf);
+
 		return ret;
 	}
 
 	printf("Preparing the haxx...\n");
 	ret = http_haxx("http://localhost/");//URL doesn't matter much since this won't actually be requested over the network.
 	httpcExit();
+	free(http_codebin_buf);
 	if(ret!=0)
 	{
 		printf("Haxx setup failed: 0x%08x.\n", (unsigned int)ret);

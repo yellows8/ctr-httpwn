@@ -7,6 +7,10 @@
 #include <unistd.h>
 #include <3ds.h>
 
+extern u8 *http_codebin_buf;
+extern u32 *http_codebin_buf32;
+extern u32 http_codebin_size;
+
 u32 ROP_LDRR4R6_R5x1b8_OBJVTABLECALLx8 = 0x0010264c;//Load r4 from r5+0x1b8 and r6 from r5+0x1bc. Set r0 to r4. Load the vtable addr + funcptr using just r1 and blx to r1(vtable funcptr +8).
 u32 ROP_LDRR1_R4xc_LDRR2_R4x14_LDRR4_R4x4_OBJVTABLECALLx18 = 0x00114b30;//Load ip from r0+0(vtable ptr). Load r1 from r4+0xc, r2 from r4+0x14, and r3 from r4+0x4. Then load ip from ip+0x18(vtable+0x18) and blx to ip.
 u32 ROP_STACKPIVOT = 0x00107b08;//Add sp with r3 then pop-pc.
