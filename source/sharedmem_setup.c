@@ -403,3 +403,10 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	return 0;
 }
 
+Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_sharedmem_size)
+{
+	printf("heap+0 = 0x%08x.\n", (unsigned int)httpheap_sharedmem[0]);
+
+	return 0;
+}
+

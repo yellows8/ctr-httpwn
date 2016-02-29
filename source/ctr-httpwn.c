@@ -17,6 +17,7 @@ u32 *http_codebin_buf32;
 u32 http_codebin_size;
 
 Result init_hax_sharedmem(u32 *tmpbuf);
+Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_sharedmem_size);
 
 Result loadcodebin(u64 programid, FS_MediaType mediatype, u8 **codebin_buf, u32 *codebin_size);
 
@@ -172,6 +173,7 @@ Result http_haxx(char *requrl)
 	u32 *linearaddr = NULL;
 	Handle httpheap_sharedmem_handle=0;
 	vu32 *httpheap_sharedmem = NULL;
+	u32 httpheap_sharedmem_size = 0x22000;
 	Handle httpc_sslc_handle = 0;
 
 	ret = httpcOpenContext(&context, HTTPC_METHOD_POST, requrl, 1);
@@ -216,7 +218,7 @@ Result http_haxx(char *requrl)
 
 	printf("httpc_sslc_handle = 0x%08x.\n", (unsigned int)httpc_sslc_handle);
 
-	httpheap_sharedmem = (vu32*)mappableAlloc(0x22000);
+	httpheap_sharedmem = (vu32*)mappableAlloc(httpheap_sharedmem_size);
 	if(httpheap_sharedmem==NULL)
 	{
 		ret = -2;
@@ -238,9 +240,9 @@ Result http_haxx(char *requrl)
 	}
 
 	printf("Successfully mapped the httpheap sharedmem.\n");
-	printf("heap+0: 0x%08x 0x%08x 0x%08x 0x%08x\n", (unsigned int)httpheap_sharedmem[0], (unsigned int)httpheap_sharedmem[1], (unsigned int)httpheap_sharedmem[2], (unsigned int)httpheap_sharedmem[3]);
 
-	//Add code which actually uses httpheap_sharedmem / httpc_sslc_handle here.
+	ret = setuphaxx_httpheap_sharedmem(httpheap_sharedmem, httpheap_sharedmem_size);
+	if(R_FAILED(ret))printf("Failed to setup the haxx in the httpheap sharedmem: 0x%08x.\n", (unsigned int)ret);
 
 	svcUnmapMemoryBlock(httpheap_sharedmem_handle, (u32)httpheap_sharedmem);
 
@@ -250,7 +252,7 @@ Result http_haxx(char *requrl)
 
 	svcCloseHandle(httpc_sslc_handle);
 
-	return 0;
+	return ret;
 }
 
 Result httpwn_setup()
