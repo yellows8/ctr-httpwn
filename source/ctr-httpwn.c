@@ -241,8 +241,11 @@ Result http_haxx(char *requrl)
 
 	printf("Successfully mapped the httpheap sharedmem.\n");
 
+	printf("Initializing the haxx under the httpheap sharedmem...\n");
 	ret = setuphaxx_httpheap_sharedmem(httpheap_sharedmem, httpheap_sharedmem_size);
 	if(R_FAILED(ret))printf("Failed to setup the haxx in the httpheap sharedmem: 0x%08x.\n", (unsigned int)ret);
+
+	if(ret==0)printf("Finalizing...\n");
 
 	svcUnmapMemoryBlock(httpheap_sharedmem_handle, (u32)httpheap_sharedmem);
 

