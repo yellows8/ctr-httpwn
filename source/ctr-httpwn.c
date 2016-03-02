@@ -17,7 +17,7 @@ u32 *http_codebin_buf32;
 u32 http_codebin_size;
 
 Result init_hax_sharedmem(u32 *tmpbuf);
-Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_sharedmem_size);
+Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_sharedmem_size, vu32 *ropvmem_sharedmem, u32 ropvmem_sharedmem_size);
 
 Result loadcodebin(u64 programid, FS_MediaType mediatype, u8 **codebin_buf, u32 *codebin_size);
 
@@ -278,8 +278,8 @@ Result http_haxx(char *requrl)
 
 	printf("Successfully mapped the httpheap+ropvmem sharedmem.\n");
 
-	printf("Initializing the haxx under the httpheap sharedmem...\n");
-	ret = setuphaxx_httpheap_sharedmem(httpheap_sharedmem, httpheap_sharedmem_size);
+	printf("Initializing the haxx under the httpheap+ropvmem sharedmem...\n");
+	ret = setuphaxx_httpheap_sharedmem(httpheap_sharedmem, httpheap_sharedmem_size, ropvmem_sharedmem, ropvmem_sharedmem_size);
 	if(R_FAILED(ret))printf("Failed to setup the haxx in the httpheap sharedmem: 0x%08x.\n", (unsigned int)ret);
 
 	if(ret==0)printf("Finalizing...\n");
