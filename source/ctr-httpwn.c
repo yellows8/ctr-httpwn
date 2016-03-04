@@ -307,6 +307,14 @@ Result http_haxx(char *requrl)
 		ret = httpcOpenContext(&context, HTTPC_METHOD_POST, requrl, 1);
 		if(ret!=0)return ret;
 
+		printf("Setting the user-agent...\n");
+		ret = httpcAddRequestHeaderField(&context, "User-Agent", "ctr-httpwn/"VERSION);
+		if(ret!=0)
+		{
+			httpcCloseContext(&context);
+			return ret;
+		}
+
 		printf("Running httpcAddPostDataAscii...\n");
 		ret = httpcAddPostDataAscii(&context, "form_name", "form_value");
 		if(ret!=0)

