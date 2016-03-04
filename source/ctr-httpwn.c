@@ -44,8 +44,8 @@ Result _HTTPC_CloseContext(Handle handle, Handle contextHandle, Handle *httpheap
 
 	if(cmdbuf[1]==0)
 	{
-		if(cmdbuf[0]!=0x00030044)return -1;//The ROP is supposed to return a custom cmdreply.
-		if(cmdbuf[2]!=(0x0 | ((0x2-1)<<26)) || cmdbuf[5]!=0x10)return -1;
+		if(cmdbuf[0]!=0x00030045)return -1;//The ROP is supposed to return a custom cmdreply.
+		if(cmdbuf[2]!=(0x10 | ((0x2-1)<<26)) || cmdbuf[5]!=0x0)return -1;
 
 		if(httpheap_sharedmem_handle)*httpheap_sharedmem_handle = cmdbuf[3];
 		if(ropvmem_sharedmem_handle)*ropvmem_sharedmem_handle = cmdbuf[4];
@@ -179,6 +179,7 @@ Result http_haxx(char *requrl)
 	vu32 *ropvmem_sharedmem = NULL;
 	u32 ropvmem_sharedmem_size = 0x1000;
 	Handle httpc_sslc_handle = 0;
+	u32 i;
 
 	ret = httpcOpenContext(&context, HTTPC_METHOD_POST, requrl, 1);
 	if(ret!=0)return ret;
@@ -296,7 +297,37 @@ Result http_haxx(char *requrl)
 
 	svcCloseHandle(httpc_sslc_handle);
 
-	return ret;
+	if(ret)return ret;
+
+	printf("Verifying that the haxx was setup correctly...\n");
+
+	for(i=0; i<2; i++)
+	{
+		printf("Opening the context...\n");
+		ret = httpcOpenContext(&context, HTTPC_METHOD_POST, requrl, 1);
+		if(ret!=0)return ret;
+
+		printf("Running httpcAddPostDataAscii...\n");
+		ret = httpcAddPostDataAscii(&context, "form_name", "form_value");
+		if(ret!=0)
+		{
+			httpcCloseContext(&context);
+			return ret;
+		}
+
+		printf("Closing the context...\n");
+		ret = httpcCloseContext(&context);
+		if(R_FAILED(ret))
+		{
+			printf("httpcCloseContext returned 0x%08x.\n", (unsigned int)ret);
+			if(ret==0xC920181A)printf("This error means the HTTP sysmodule crashed.\n");
+			return ret;
+		}
+
+		printf("Starting the next verification round...\n");
+	}
+
+	return 0;
 }
 
 Result httpwn_setup()
