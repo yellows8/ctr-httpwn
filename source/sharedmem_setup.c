@@ -596,7 +596,8 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 	//Setup the custom vtable for context-session.
 	ptr = (u32*)&ropvmem_sharedmem[(__custom_contextservsession_vtable - 0x0f000000) >> 2];
 	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE);
-	ptr[0x80>>2] = 0x90909090;//Overwrite the vtable funcptr for AddRequestHeader.
+	ptr[0x80>>2] = 0x90909090;//Overwrite the vtable funcptr for AddRequestHeader. This is called from the main-thread.
+	ptr[0x84>>2] = 0xa0a0a0a0;//Overwrite the vtable funcptr for AddPostDataAscii. This is called from the main-thread.
 
 	//Overwrite every vtable ptr with the target value with the custom one.
 
