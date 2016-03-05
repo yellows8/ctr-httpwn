@@ -43,6 +43,8 @@ u32 ROP_ADDSPx3C_POPPC = 0x00100204;//sp+=0x3c, then pop-pc.
 
 u32 ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC = 0x00109148;
 
+u32 ROP_MOVR0_VAL0_BXLR = 0x00104e20;//r0=0x0, bx-lr.
+
 u32 ROP_memcpy = 0x0010d274;
 u32 ROP_svcControlMemory = 0x00100770;
 u32 ROP_CreateContext = 0x0011689c;//This is the actual CreateContext function called via the *(obj+16) vtable. inr0=_this inr1=urlbuf* inr2=urlbufsize inr3=u8 requestmethod insp0=u32* out contexthandle
@@ -600,7 +602,7 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 	//ptr[0x6c>>2] = 0x80808080;//ReceiveDataTimeout. This is called from the same seperate thread as CloseContext.
 	ptr[0x80>>2] = 0x90909090;//AddRequestHeader. This is called from the main-thread.
 	ptr[0x84>>2] = 0xa0a0a0a0;//AddPostDataAscii. This is called from the main-thread.
-	//ptr[0xa8>>2] = 0xb0b0b0b0;//SendPOSTDataRawTimeout. This is called from the same seperate thread as CloseContext.
+	//ptr[0xa8>>2] = ROP_MOVR0_VAL0_BXLR;//SendPOSTDataRawTimeout. This is called from the same seperate thread as CloseContext. When this write is enabled, HTTPC:SendPOSTDataRawTimeout will just return 0 without doing anything, hence the specified POST data will not be uploaded.
 
 	//Overwrite every vtable ptr with the target value with the custom one.
 
