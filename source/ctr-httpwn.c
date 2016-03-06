@@ -12,12 +12,15 @@
 extern Handle __httpc_servhandle;
 extern u32 *__httpc_sharedmem_addr;
 
+extern u32 ropvmem_size;
+extern u32 httpheap_size;
+
 u8 *http_codebin_buf;
 u32 *http_codebin_buf32;
 u32 http_codebin_size;
 
 Result init_hax_sharedmem(u32 *tmpbuf);
-Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, u32 httpheap_sharedmem_size, vu32 *ropvmem_sharedmem, u32 ropvmem_sharedmem_size);
+Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_sharedmem);
 
 Result loadcodebin(u64 programid, FS_MediaType mediatype, u8 **codebin_buf, u32 *codebin_size);
 
@@ -175,9 +178,7 @@ Result http_haxx(char *requrl)
 	Handle httpheap_sharedmem_handle=0;
 	Handle ropvmem_sharedmem_handle=0;
 	vu32 *httpheap_sharedmem = NULL;
-	u32 httpheap_sharedmem_size = 0x22000;
 	vu32 *ropvmem_sharedmem = NULL;
-	u32 ropvmem_sharedmem_size = 0x1000;
 	Handle httpc_sslc_handle = 0;
 	u32 i;
 
@@ -223,7 +224,7 @@ Result http_haxx(char *requrl)
 
 	printf("httpc_sslc_handle = 0x%08x.\n", (unsigned int)httpc_sslc_handle);
 
-	httpheap_sharedmem = (vu32*)mappableAlloc(httpheap_sharedmem_size);
+	httpheap_sharedmem = (vu32*)mappableAlloc(httpheap_size);
 	if(httpheap_sharedmem==NULL)
 	{
 		ret = -2;
@@ -233,7 +234,7 @@ Result http_haxx(char *requrl)
 		return ret;
 	}
 
-	ropvmem_sharedmem = (vu32*)mappableAlloc(ropvmem_sharedmem_size);
+	ropvmem_sharedmem = (vu32*)mappableAlloc(ropvmem_size);
 	if(ropvmem_sharedmem==NULL)
 	{
 		ret = -3;
@@ -280,24 +281,30 @@ Result http_haxx(char *requrl)
 	printf("Successfully mapped the httpheap+ropvmem sharedmem.\n");
 
 	printf("Initializing the haxx under the httpheap+ropvmem sharedmem...\n");
-	ret = setuphaxx_httpheap_sharedmem(httpheap_sharedmem, httpheap_sharedmem_size, ropvmem_sharedmem, ropvmem_sharedmem_size);
-	if(R_FAILED(ret))printf("Failed to setup the haxx in the httpheap sharedmem: 0x%08x.\n", (unsigned int)ret);
+	ret = setuphaxx_httpheap_sharedmem(httpheap_sharedmem, ropvmem_sharedmem);
 
-	if(ret==0)printf("Finalizing...\n");
+	if(R_FAILED(ret))
+	{
+		printf("Failed to setup the haxx in the httpheap sharedmem: 0x%08x.\n", (unsigned int)ret);
+	}
+	else
+	{
+		printf("Finalizing...\n");
+	}
 
 	svcUnmapMemoryBlock(httpheap_sharedmem_handle, (u32)httpheap_sharedmem);
 	svcCloseHandle(httpheap_sharedmem_handle);
 	mappableFree((void*)httpheap_sharedmem);
 	httpheap_sharedmem = NULL;
 
-	svcUnmapMemoryBlock(ropvmem_sharedmem_handle, (u32)httpheap_sharedmem);
+	svcUnmapMemoryBlock(ropvmem_sharedmem_handle, (u32)ropvmem_sharedmem);
 	svcCloseHandle(ropvmem_sharedmem_handle);
 	mappableFree((void*)ropvmem_sharedmem);
 	ropvmem_sharedmem = NULL;
 
 	svcCloseHandle(httpc_sslc_handle);
 
-	if(ret)return ret;
+	if(R_FAILED(ret))return ret;
 
 	printf("Verifying that the haxx was setup correctly...\n");
 
