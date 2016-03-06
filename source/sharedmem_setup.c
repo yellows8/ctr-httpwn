@@ -65,7 +65,7 @@ u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE = 0x0011b744;//Vtable for the obj
 u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE = 0x108;
 
 static u32 ropvmem_base = 0x0f000000;
-u32 ropvmem_size = 0x1000;
+u32 ropvmem_size = 0x4000;
 
 u32 httpheap_size = 0x22000;
 
@@ -490,8 +490,8 @@ Result setuphaxx_httpheap_sharedmem(vu32 *httpheap_sharedmem, vu32 *ropvmem_shar
 
 	u32 params[7] = {0};
 
-	__custom_mainservsession_vtable = ropvmem_base + 0xf00 - 0x108;
-	__custom_contextservsession_vtable = ropvmem_base + 0xf00 - 0x108*2;
+	__custom_mainservsession_vtable = ropvmem_base + ropvmem_size - 0x108;
+	__custom_contextservsession_vtable = ropvmem_base + ropvmem_size - 0x108*2;
 
 	//Setup the ROP-chain used by the CreateContext vtable funcptr.
 
