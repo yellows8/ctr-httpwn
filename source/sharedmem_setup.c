@@ -117,10 +117,11 @@ targeturlctx targeturl_list[] = {
 		.url = "https://nasc.nintendowifi.net/ac"
 	},
 
-	{//Browser-version-check.
+	/*
+	{//Browser-version-check. Disabled since this is useless without an implemented method for overwriting main-serv-sessions' httpc_cmdhandler obj+16 vtableptr, after the initial ctr-httpwn run.
 		.url = "https://cbvc.cdn.nintendo.net/",
 		.new_url = "http://10.0.0.30/ctr-httpwn/cbvc"//Just a static page returning '0'.
-	}
+	}*/
 };
 
 void ropgen_addword(u32 **ropchain, u32 *http_ropvaddr, u32 value)
