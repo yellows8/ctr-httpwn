@@ -89,6 +89,16 @@ static u32 __httpmainthread_cmdhandler_stackframe = 0x0ffffe28;
 
 static u32 ropheap = 0x0ffff000;//Main-thread stack-bottom.
 
+typedef struct _targeturl_requestoverridectx {
+	u32 next_vaddr;//Address of the next struct in the list in HTTP-sysmodule memory.
+	struct _targeturl_requestoverridectx *next;//Src data to copy to next_sharedmemptr.
+	struct _targeturl_requestoverridectx *next_sharedmemptr;
+
+	char name[16];
+	char target_data[16];
+	char new_data[16];
+} targeturl_requestoverridectx;
+
 typedef enum {
 	TARGETURLCAP_AddRequestHeader = 1<<0, //Override the value-data used for certain headers.
 	TARGETURLCAP_AddPostDataAscii = 1<<1, //Override the value-data used for certain form-fields.
@@ -100,6 +110,12 @@ typedef struct {
 	targeturl_caps caps;
 	u32 vtableptr;
 	u32 *vtable_sharedmemptr;
+	u32 reqheader_first_vaddr;//Address of the first struct in the list in HTTP-sysmodule memory for request-headers. Used with AddRequestHeader.
+	targeturl_requestoverridectx *reqheader;
+	targeturl_requestoverridectx *reqheader_sharedmemptr;
+	u32 postform_first_vaddr;//Address of the first struct in the list in HTTP-sysmodule memory for post-forms. Used with AddPostDataAscii.
+	targeturl_requestoverridectx *postform;
+	targeturl_requestoverridectx *postform_sharedmemptr;
 	char url[0x100];//Target URL to compare the CreateContext input URL with. The compare will not include the NUL-terminator in this target URL, hence the check will pass when there's additional chars following the matched URL. This is needed due to the multiple account.nintendo.net URLs that need targeted + handled all the same way.
 	char new_url[0x100];//Optional, when set the specified URL will overwrite the URL used with CreateContext, NUL-terminator included.
 } targeturlctx;
@@ -426,6 +442,42 @@ u32 memalloc_ropvmem_dataheap(u32 *curptr, u32 **sharedmem_ptr, u32 size)
 	return *curptr;
 }
 
+void allocate_reqoverride_list(u32 *mainrop_endaddr, targeturl_requestoverridectx **first, targeturl_requestoverridectx **first_sharedmemptr, u32 *first_vaddr)
+{
+	targeturl_requestoverridectx *reqctx, **sharedmemptr;
+	u32 *vaddr;
+
+	reqctx = *first;
+	vaddr = first_vaddr;
+	sharedmemptr = first_sharedmemptr;
+	while(reqctx)
+	{
+		*vaddr = memalloc_ropvmem_dataheap(mainrop_endaddr, (u32**)sharedmemptr, sizeof(targeturl_requestoverridectx));
+
+		sharedmemptr = &reqctx->next_sharedmemptr;
+		vaddr = &reqctx->next_vaddr;
+		reqctx = reqctx->next;
+	}
+}
+
+void init_reqoverride_list(targeturl_requestoverridectx *first, targeturl_requestoverridectx *first_sharedmemptr)
+{
+	targeturl_requestoverridectx *reqctx, *reqctx_tmp, *sharedmemptr;
+
+	reqctx = first;
+	sharedmemptr = first_sharedmemptr;
+
+	while(reqctx)
+	{
+		memcpy(sharedmemptr, reqctx, sizeof(targeturl_requestoverridectx));
+
+		reqctx_tmp = reqctx;
+		sharedmemptr = reqctx->next_sharedmemptr;
+		reqctx = reqctx->next;
+		free(reqctx_tmp);
+	}
+}
+
 Result init_hax_sharedmem(u32 *tmpbuf)
 {
 	u32 sharedmembase = 0x10006000;
@@ -599,7 +651,7 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 
 Result setuphaxx_httpheap_sharedmem()
 {
-	u32 pos, i;
+	u32 pos;
 	u32 tmp_pos;
 	u32 tmpaddr0;
 
@@ -652,14 +704,10 @@ Result setuphaxx_httpheap_sharedmem()
 
 		if(targeturl_list[pos].caps==0)continue;
 
-		targeturl_list[pos].vtableptr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &targeturl_list[pos].vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
-		
-		for(i=0; i<targeturl_list_entcount; i++)
-		{
-			if(pos==i || targeturl_list[pos].caps != targeturl_list[i].caps)continue;
+		targeturl_list[pos].vtableptr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &targeturl_list[pos].vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE + 0x4);
 
-			targeturl_list[i].vtableptr = targeturl_list[pos].vtableptr;//Don't copy vtable_sharedmemptr since that would result in initializing the vtable memory multiple times below.
-		}
+		allocate_reqoverride_list(&mainrop_endaddr, &targeturl_list[pos].reqheader, &targeturl_list[pos].reqheader_sharedmemptr, &targeturl_list[pos].reqheader_first_vaddr);
+		allocate_reqoverride_list(&mainrop_endaddr, &targeturl_list[pos].postform, &targeturl_list[pos].postform_sharedmemptr, &targeturl_list[pos].postform_first_vaddr);
 	}
 
 	//Setup the ROP-chain used by the vtable funcptrs from the end of this function.
@@ -938,6 +986,8 @@ Result setuphaxx_httpheap_sharedmem()
 	//Setup the custom vtables for context-sessions.
 	for(pos=0; pos<targeturl_list_entcount; pos++)
 	{
+		tmp_pos = targeturl_list_vaddr + pos*sizeof(targeturlctx);
+
 		ptr = targeturl_list[pos].vtable_sharedmemptr;
 		if(ptr==NULL)continue;
 
@@ -949,6 +999,11 @@ Result setuphaxx_httpheap_sharedmem()
 		if(tmpcaps & TARGETURLCAP_AddRequestHeader)ptr[0x80>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//AddRequestHeader. This is called from the main-thread.
 		if(tmpcaps & TARGETURLCAP_AddPostDataAscii)ptr[0x84>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//AddPostDataAscii. This is called from the main-thread.
 		if(tmpcaps & TARGETURLCAP_SendPOSTDataRawTimeout)ptr[0xa8>>2] = ROP_MOVR0_VAL0_BXLR;//SendPOSTDataRawTimeout. This is called from the same seperate thread as CloseContext. With this HTTPC:SendPOSTDataRawTimeout will just return 0 without doing anything, hence the specified POST data will not be uploaded.
+
+		ptr[ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE>>2] = tmp_pos;
+
+		init_reqoverride_list(targeturl_list[pos].reqheader, targeturl_list[pos].reqheader_sharedmemptr);
+		init_reqoverride_list(targeturl_list[pos].postform, targeturl_list[pos].postform_sharedmemptr);
 	}
 
 	memcpy(targeturl_list_sharedmemptr, targeturl_list, targeturl_list_size);
