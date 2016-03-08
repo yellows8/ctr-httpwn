@@ -95,8 +95,8 @@ typedef struct _targeturl_requestoverridectx {
 	struct _targeturl_requestoverridectx *next_sharedmemptr;
 
 	char name[16];
-	char target_data[16];
-	char new_data[16];
+	char target_value[16];
+	char new_value[16];
 } targeturl_requestoverridectx;
 
 typedef enum {
