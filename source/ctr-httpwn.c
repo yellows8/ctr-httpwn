@@ -9,6 +9,8 @@
 
 #include "cmpblock_bin.h"
 
+#include "letsencryptauthorityx1_der.h"
+
 extern Handle __httpc_servhandle;
 extern u32 *__httpc_sharedmem_addr;
 
@@ -346,6 +348,63 @@ Result http_haxx(char *requrl)
 	return 0;
 }
 
+Result download_config(char *url, u8 *cert, u32 certsize)
+{
+	Result ret=0;
+	u32 statuscode=0;
+	httpcContext context;
+
+	printf("Opening the context...\n");
+	ret = httpcOpenContext(&context, HTTPC_METHOD_GET, url, 1);
+	if(R_FAILED(ret))return ret;
+
+	printf("Setting the user-agent...\n");
+	ret = httpcAddRequestHeaderField(&context, "User-Agent", "ctr-httpwn/"VERSION);
+	if(R_FAILED(ret))
+	{
+		httpcCloseContext(&context);
+		return ret;
+	}
+
+	printf("Adding the RootCA...\n");
+	ret = httpcAddTrustedRootCA(&context, cert, certsize);
+	if(R_FAILED(ret))
+	{
+		printf("httpcAddTrustedRootCA returned 0x%08x.\n", (unsigned int)ret);
+		httpcCloseContext(&context);
+		return ret;
+	}
+
+	printf("Starting the request...\n");
+	ret = httpcBeginRequest(&context);
+	if(R_FAILED(ret))
+	{
+		printf("httpcBeginRequest returned 0x%08x.\n", (unsigned int)ret);
+		httpcCloseContext(&context);
+		return ret;
+	}
+
+	printf("Getting the status-code...\n");
+	ret = httpcGetResponseStatusCode(&context, &statuscode, 0);
+	if(R_FAILED(ret))
+	{
+		httpcCloseContext(&context);
+		return ret;
+	}
+
+	printf("Closing the context...\n");
+	ret = httpcCloseContext(&context);
+	if(R_FAILED(ret))
+	{
+		printf("httpcCloseContext returned 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
+
+	printf("statuscode = %u.\n", (unsigned int)statuscode);
+
+	return 0;
+}
+
 Result httpwn_setup()
 {
 	Result ret = 0;
@@ -401,6 +460,15 @@ Result httpwn_setup()
 
 		free(http_codebin_buf);
 
+		return ret;
+	}
+
+	printf("Downloading config...\n");
+	ret = download_config("https://yls8.mtheall.com/ctr-httpwn/config", (u8*)letsencryptauthorityx1_der, letsencryptauthorityx1_der_size);
+	if(ret!=0)
+	{
+		printf("Config downloading failed: 0x%08x.\n", (unsigned int)ret);
+		httpcExit();
 		return ret;
 	}
 
