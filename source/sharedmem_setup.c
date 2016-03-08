@@ -119,26 +119,23 @@ typedef struct {
 	char new_url[0x100];//Optional, when set the specified URL will overwrite the URL used with CreateContext, NUL-terminator included.
 } targeturlctx;
 
-targeturl_requestoverridectx reqoverride_test[2] = {
-	{
-		.next = &reqoverride_test[1],
-		.name = "User-Agent",
-		//.value = "CTR NUP 040600 Mar 14 2012 13:32:39",
-		.new_value = "HAX HAX"
-	},
+targeturl_requestoverridectx reqoverride_nascuseragent = {
+	.name = "User-Agent",
+	//.new_value = "CTR FPD/0004"
+	.new_value = "CTR FPD/0003"//Supposed to trigger the sysupdate-required message on latest sysver, doesn't always happen though(the modified UA/form are sent fine when it doesn't trigger the message).
+};
 
-	{
-		.name = "SOAPAction",
-		.new_value = "HAX"
-	}
+targeturl_requestoverridectx reqoverride_nascform_fpdver = {
+	.name = "fpdver",
+	//.new_value = "MDAwNA**"//Base64-encoded "0004".
+	.new_value = "MDAwMw**"//Base64-encoded "0003".
 };
 
 targeturlctx targeturl_list[] = {
 	{//This is the URL used for doing the actual sysupdate check / getting the the list of sysupdate titles.
-		.caps = TARGETURLCAP_SendPOSTDataRawTimeout | TARGETURLCAP_AddRequestHeader,
+		.caps = TARGETURLCAP_SendPOSTDataRawTimeout,
 		.url = "https://nus.c.shop.nintendowifi.net/nus/services/NetUpdateSOAP",
-		.new_url = "http://10.0.0.30/ctr-httpwn/NetUpdateSOAP",
-		.reqheader = &reqoverride_test[0]
+		.new_url = "http://10.0.0.30/ctr-httpwn/NetUpdateSOAP"
 	},
 
 	{//NNID
@@ -149,7 +146,9 @@ targeturlctx targeturl_list[] = {
 	{//Used by friends-sysmodule and AC-sysmodule, however it's unknown if AC ever runs the code for it.
 		.caps = TARGETURLCAP_AddRequestHeader | TARGETURLCAP_AddPostDataAscii,
 		.url = "https://nasc.nintendowifi.net/ac",
-		.new_url = "http://10.0.0.30/"
+		//.new_url = "http://10.0.0.30/",
+		.reqheader = &reqoverride_nascuseragent,
+		.postform = &reqoverride_nascform_fpdver
 	},
 
 	/*
@@ -501,7 +500,7 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 					if(strncmp(input_valuebuf, curent->value, 0x40-1)!=0)continue;
 				}
 
-				strncpy(input_valuebuf, curent->new_value, strlen(input_valuebuf));
+				strncpy(input_valuebuf, curent->new_value, strlen(input_valuebuf)+1);
 				break;
 			}
 		}
@@ -572,7 +571,8 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 	ropgen_checkcond_necontinue_eqjump(&ropchain_block1, &ropvaddr_block1, *http_ropvaddr);
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);
-	ropgen_blxr3(ropchain, http_ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncpy with strlen(input_valuebuf).
+	ropgen_blxr3(ropchain, http_ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncpy with strlen(input_valuebuf)+1.
+	ropgen_add_r0ip(ropchain, http_ropvaddr, 1);
 	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*5 + 0x40 + 0x4, 1);
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);
@@ -580,9 +580,9 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);
 	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, new_value));
-	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncpy with curent->value.
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncpy with curent->new_value.
 
-	ropgen_callfunc(ropchain, http_ropvaddr, ROP_strncpy, params);//strncpy(input_valuebuf, curent->new_value, strlen(input_valuebuf));
+	ropgen_callfunc(ropchain, http_ropvaddr, ROP_strncpy, params);//strncpy(input_valuebuf, curent->new_value, strlen(input_valuebuf)+1);
 
 	ropchain_block1 = *ropchain;//break;
 	ropvaddr_block1 = *http_ropvaddr;
