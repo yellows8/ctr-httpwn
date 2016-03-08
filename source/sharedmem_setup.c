@@ -119,7 +119,7 @@ typedef struct {
 	char new_url[0x100];//Optional, when set the specified URL will overwrite the URL used with CreateContext, NUL-terminator included.
 } targeturlctx;
 
-//Currently the ROP ignores the entries starting with the second one for the targeturlctx and targeturl_requestoverridectx lists, unknown why exactly.
+//Currently the ROP ignores the entries starting with the second one for the targeturlctx and targeturl_requestoverridectx lists. This is caused by re-running ROP-chains which calls strncmp. On the first run strncmp will corrupt the stack, but not anything to cause a crash. It overwrites a jump-addr with strncmp-entry LR, which then turns the strncmp call in the ROP-chain into a NOP. Hence, on all following runs of that ROP-chain each strncmp call will always return non-zero.
 
 targeturl_requestoverridectx reqoverride_test[2] = {
 	{
