@@ -135,7 +135,7 @@ targeturlctx targeturl_list[] = {
 	{//This is the URL used for doing the actual sysupdate check / getting the the list of sysupdate titles.
 		.caps = TARGETURLCAP_SendPOSTDataRawTimeout,
 		.url = "https://nus.c.shop.nintendowifi.net/nus/services/NetUpdateSOAP",
-		.new_url = "http://10.0.0.30/ctr-httpwn/NetUpdateSOAP"
+		.new_url = "https://yls8.mtheall.com/ctr-httpwn/NetUpdateSOAP"
 	},
 
 	{//NNID

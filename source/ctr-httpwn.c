@@ -175,7 +175,31 @@ Result writehax_sharedmem_physmem(u32 *linearaddr)
 	return 0;
 }
 
-Result http_haxx(char *requrl)
+Result setuphax_http_sslc(Handle httpc_sslc_handle, u8 *cert, u32 certsize)
+{
+	Result ret=0;
+	u32 RootCertChain_contexthandle;
+
+	ret = sslcInit(httpc_sslc_handle);
+	if(R_FAILED(ret))
+	{
+		printf("Failed to initialize sslc: 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
+
+	//RootCertChain_contexthandle 0x1/0x2 are the first/second NIM-sysmodule RootCertChain. 0x3 is the ACT-sysmodule RootCertChain, which isn't used here.
+	for(RootCertChain_contexthandle=0x1; RootCertChain_contexthandle<0x3; RootCertChain_contexthandle++)
+	{
+		ret = sslcAddTrustedRootCA(RootCertChain_contexthandle, cert, certsize);
+		if(R_FAILED(ret))break;
+	}
+
+	sslcExit();
+
+	return ret;
+}
+
+Result http_haxx(char *requrl, u8 *cert, u32 certsize)
 {
 	Result ret=0;
 	httpcContext context;
@@ -305,9 +329,22 @@ Result http_haxx(char *requrl)
 	mappableFree((void*)ropvmem_sharedmem);
 	ropvmem_sharedmem = NULL;
 
-	svcCloseHandle(httpc_sslc_handle);
+	if(R_FAILED(ret))
+	{
+		svcCloseHandle(httpc_sslc_handle);
+		return ret;
+	}
 
-	if(R_FAILED(ret))return ret;
+	printf("Running setup with the sslc handle...\n");
+	ret = setuphax_http_sslc(httpc_sslc_handle, cert, certsize);
+
+	svcCloseHandle(httpc_sslc_handle);//Normally sslcExit should close this, but close it here too just in case.
+
+	if(R_FAILED(ret))
+	{
+		printf("Setup failed with sslc: 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
 
 	printf("Verifying that the haxx was setup correctly...\n");
 
@@ -411,6 +448,9 @@ Result httpwn_setup()
 	u64 http_sysmodule_titleid = 0x0004013000002902ULL;
 	AM_TitleEntry title_entry;
 
+	u8 *cert = (u8*)letsencryptauthorityx1_der;
+	u32 certsize = letsencryptauthorityx1_der_size;
+
 	ret = amInit();
 	if(ret!=0)
 	{
@@ -464,7 +504,7 @@ Result httpwn_setup()
 	}
 
 	printf("Downloading config...\n");
-	ret = download_config("https://yls8.mtheall.com/ctr-httpwn/config", (u8*)letsencryptauthorityx1_der, letsencryptauthorityx1_der_size);
+	ret = download_config("https://yls8.mtheall.com/ctr-httpwn/config", cert, certsize);
 	if(ret!=0)
 	{
 		printf("Config downloading failed: 0x%08x.\n", (unsigned int)ret);
@@ -473,7 +513,7 @@ Result httpwn_setup()
 	}
 
 	printf("Preparing the haxx...\n");
-	ret = http_haxx("http://localhost/");//URL doesn't matter much since this won't actually be requested over the network.
+	ret = http_haxx("http://localhost/", cert, certsize);//URL doesn't matter much since this won't actually be requested over the network.
 	httpcExit();
 	free(http_codebin_buf);
 	if(ret!=0)
