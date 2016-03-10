@@ -77,7 +77,7 @@ u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE = 0x0011b744;//Vtable for the obj
 u32 ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE = 0x108;//Size of the vtable for the objptr from httpc_cmdhandler *(_this+16).
 
 static u32 ropvmem_base = 0x0f000000;
-u32 ropvmem_size = 0x8000;
+u32 ropvmem_size = 0xa000;
 
 u32 httpheap_size = 0x22000;
 
@@ -93,6 +93,10 @@ typedef struct _targeturl_requestoverridectx {
 	struct _targeturl_requestoverridectx *next;//Src data to copy to next_sharedmemptr.
 	struct _targeturl_requestoverridectx *next_sharedmemptr;
 
+	u32 id;//Normally this should be unique, but it can be shared with multiple contexts for having required_id trigger with multiple contexts.
+	u32 setid_onmatch;//When non-zero, copy the id value to a field in the targeturlctx when matching request data is found.
+	u32 required_id;//When non-zero, this value must match the field referenced above in the targeturlctx in order for the request data to completely match.
+
 	char name[0x40];//Must match the entire input name.
 	char value[0x40];//Optional, when set this must match the entire input value.
 	char new_value[0x40];
@@ -106,41 +110,160 @@ typedef enum {
 
 typedef struct {
 	u32 next_vaddr;//Address of the next struct in the list in HTTP-sysmodule memory.
+
 	targeturl_caps caps;
+
+	u32 lastmatch_id;//Set to zero when the CreateContext ROP-chain runs with this ctx. This is the targeturlctx field mentioned in requestoverridectx.
+
 	u32 vtableptr;
 	u32 *vtable_sharedmemptr;
+
 	u32 reqheader_first_vaddr;//Address of the first struct in the list in HTTP-sysmodule memory for request-headers. Used with AddRequestHeader.
 	targeturl_requestoverridectx *reqheader;
 	targeturl_requestoverridectx *reqheader_sharedmemptr;
+
 	u32 postform_first_vaddr;//Address of the first struct in the list in HTTP-sysmodule memory for post-forms. Used with AddPostDataAscii.
 	targeturl_requestoverridectx *postform;
 	targeturl_requestoverridectx *postform_sharedmemptr;
+
 	char url[0x100];//Target URL to compare the CreateContext input URL with. The compare will not include the NUL-terminator in this target URL, hence the check will pass when there's additional chars following the matched URL. This is needed due to the multiple account.nintendo.net URLs that need targeted + handled all the same way.
 	char new_url[0x100];//Optional, when set the specified URL will overwrite the URL used with CreateContext, NUL-terminator included.
 } targeturlctx;
 
 targeturl_requestoverridectx reqoverride_nascuseragent = {
+	.id = 1,
 	.name = "User-Agent",
 	//.new_value = "CTR FPD/0004"
 	.new_value = "CTR FPD/0003"//Supposed to trigger the sysupdate-required message on latest sysver, doesn't always happen though(the modified UA/form are sent fine when it doesn't trigger the message).
 };
 
 targeturl_requestoverridectx reqoverride_nascform_fpdver = {
+	.id = 2,
 	.name = "fpdver",
 	//.new_value = "MDAwNA**"//Base64-encoded "0004".
 	.new_value = "MDAwMw**"//Base64-encoded "0003".
 };
 
+targeturl_requestoverridectx reqoverride_actheader_mint_appver = {
+	.id = 7,
+	.required_id = 5,
+	.name = "X-Nintendo-Application-Version",
+	//.new_value = "000F"
+	.new_value = "000E"//Trigger the sysupdate-required message on latest sysver.
+};
+
+targeturl_requestoverridectx reqoverride_actheader_eshop_appver = {
+	.next = &reqoverride_actheader_mint_appver,
+	.id = 6,
+	.required_id = 4,
+	.name = "X-Nintendo-Application-Version",
+	//.new_value = "0014"
+	.new_value = "0013"//Trigger the sysupdate-required message on latest sysver.
+};
+
+targeturl_requestoverridectx reqoverride_actheader_mint_titleids[] = {
+	{
+		.next = &reqoverride_actheader_mint_titleids[1],
+		.id = 5,
+		.setid_onmatch = 1,
+		.name = "X-Nintendo-Title-ID",
+		.value = "000400300000C602"//JPN
+	},
+
+	{
+		.next = &reqoverride_actheader_mint_titleids[2],
+		.id = 5,
+		.setid_onmatch = 1,
+		.name = "X-Nintendo-Title-ID",
+		.value = "000400300000CE02"//USA
+	},
+
+	{
+		.next = &reqoverride_actheader_mint_titleids[3],
+		.id = 5,
+		.setid_onmatch = 1,
+		.name = "X-Nintendo-Title-ID",
+		.value = "000400300000D602"//EUR
+	},
+
+	{
+		.next = &reqoverride_actheader_mint_titleids[4],
+		.id = 5,
+		.setid_onmatch = 1,
+		.name = "X-Nintendo-Title-ID",
+		.value = "000400300000E302"//KOR
+	},
+
+	{
+		.next = &reqoverride_actheader_eshop_appver,
+		.id = 5,
+		.setid_onmatch = 1,
+		.name = "X-Nintendo-Title-ID",
+		.value = "000400300000E902"//TWN
+	}
+};
+
+targeturl_requestoverridectx reqoverride_actheader_eshop_titleids[] = {
+	{
+		.next = &reqoverride_actheader_eshop_titleids[1],
+		.id = 4,
+		.setid_onmatch = 1,
+		.name = "X-Nintendo-Title-ID",
+		.value = "0004001000020900"//JPN
+	},
+
+	{
+		.next = &reqoverride_actheader_eshop_titleids[2],
+		.id = 4,
+		.setid_onmatch = 1,
+		.name = "X-Nintendo-Title-ID",
+		.value = "0004001000021900"//USA
+	},
+
+	{
+		.next = &reqoverride_actheader_eshop_titleids[3],
+		.id = 4,
+		.setid_onmatch = 1,
+		.name = "X-Nintendo-Title-ID",
+		.value = "0004001000022900"//EUR
+	},
+
+	{
+		.next = &reqoverride_actheader_eshop_titleids[4],
+		.id = 4,
+		.setid_onmatch = 1,
+		.name = "X-Nintendo-Title-ID",
+		.value = "0004001000027900"//KOR
+	},
+
+	{
+		.next = &reqoverride_actheader_mint_titleids[0],
+		.id = 4,
+		.setid_onmatch = 1,
+		.name = "X-Nintendo-Title-ID",
+		.value = "0004001000028900"//TWN
+	}
+};
+
+targeturl_requestoverridectx reqoverride_actheader_sysver = {
+	.next = &reqoverride_actheader_eshop_titleids[0],
+	.id = 3,
+	.name = "X-Nintendo-System-Version",
+	//.new_value = "01F0"
+	.new_value = "01E0"//Trigger the sysupdate-required message on latest sysver.
+};
+
 targeturlctx targeturl_list[] = {
-	{//This is the URL used for doing the actual sysupdate check / getting the the list of sysupdate titles.
+	/*{//This is the URL used for doing the actual sysupdate check / getting the the list of sysupdate titles.
 		.caps = TARGETURLCAP_SendPOSTDataRawTimeout,
 		.url = "https://nus.c.shop.nintendowifi.net/nus/services/NetUpdateSOAP",
 		.new_url = "https://yls8.mtheall.com/ctr-httpwn/NetUpdateSOAP"
-	},
+	},*/
 
 	{//NNID
 		.caps = TARGETURLCAP_AddRequestHeader,
-		.url = "https://account.nintendo.net/"
+		.url = "https://account.nintendo.net/",
+		.reqheader = &reqoverride_actheader_sysver
 	},
 
 	{//Used by friends-sysmodule and AC-sysmodule, however it's unknown if AC ever runs the code for it.
@@ -460,6 +583,8 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 	u32 *ropchain_block1, ropvaddr_block1;
 	u32 *ropchain_block2, ropvaddr_block2;
 	u32 *ropchain_block3, ropvaddr_block3;
+	u32 *ropchain_block4, ropvaddr_block4;
+	u32 *ropchain_block5, ropvaddr_block5;
 
 	u32 params[7];
 
@@ -500,7 +625,14 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 					if(strncmp(input_valuebuf, curent->value, 0x40-1)!=0)continue;
 				}
 
-				strncpy(input_valuebuf, curent->new_value, strlen(input_valuebuf)+1);
+				if(curent->required_id)
+				{
+					if(targeturlctx->lastmatch_id != curent->required_id)continue;
+				}
+
+				if(curent->setid_onmatch)targeturlctx->lastmatch_id = curent->id;
+
+				if(*((u32*)curent->new_value))strncpy(input_valuebuf, curent->new_value, strlen(input_valuebuf)+1);
 				break;
 			}
 		}
@@ -570,6 +702,66 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 
 	ropgen_checkcond_necontinue_eqjump(&ropchain_block1, &ropvaddr_block1, *http_ropvaddr);
 
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);//if(curent->required_id)
+	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, required_id));
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);
+	ropchain_block5 = *ropchain;
+	ropvaddr_block5 = *http_ropvaddr;
+	ropgen_strr0r1(ropchain, http_ropvaddr, 0, 1);
+
+	ropgen_popr1(ropchain, http_ropvaddr, 0);
+	ropchain_block1 = *ropchain;
+	ropvaddr_block1 = *http_ropvaddr;
+	ropgen_checkcond_necontinue_eqjump(ropchain, http_ropvaddr, 0);
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, targeturlctx_vaddr, 1);//if(targeturlctx->lastmatch_id != curent->required_id)continue;
+	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturlctx, lastmatch_id));
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);
+
+	ropgen_popr1(ropchain, http_ropvaddr, 0);
+	ropgen_strr0r1(&ropchain_block5, &ropvaddr_block5, *http_ropvaddr - 4, 1);
+	ropchain_block4 = *ropchain;
+	ropvaddr_block4 = *http_ropvaddr;
+	ropgen_checkcond_eqcontinue_nejump(ropchain, http_ropvaddr, 0);
+
+	ropgen_checkcond_necontinue_eqjump(&ropchain_block1, &ropvaddr_block1, *http_ropvaddr);
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);//if(curent->setid_onmatch)
+	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, setid_onmatch));
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);
+
+	ropgen_popr1(ropchain, http_ropvaddr, 0);
+	ropchain_block1 = *ropchain;
+	ropvaddr_block1 = *http_ropvaddr;
+	ropgen_checkcond_necontinue_eqjump(ropchain, http_ropvaddr, 0);
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);//targeturlctx->lastmatch_id = curent->id;
+	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, id));
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x20 + 0x2c + 0x40 + 0x4, 1);//Overwrite the value for ropgen_setr0() with curent->id.
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, targeturlctx_vaddr, 1);
+	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturlctx, lastmatch_id) - 4);
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_setr0(ropchain, http_ropvaddr, 0);
+	ropgen_strr0r1(ropchain, http_ropvaddr, 0, 0);
+
+	ropgen_checkcond_necontinue_eqjump(&ropchain_block1, &ropvaddr_block1, *http_ropvaddr);
+
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);//if(*((u32*)curent->new_value))
+	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, new_value));
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);
+
+	ropgen_popr1(ropchain, http_ropvaddr, 0);
+	ropchain_block1 = *ropchain;
+	ropvaddr_block1 = *http_ropvaddr;
+	ropgen_checkcond_necontinue_eqjump(ropchain, http_ropvaddr, 0);
+
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);
 	ropgen_blxr3(ropchain, http_ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncpy with strlen(input_valuebuf)+1.
 	ropgen_add_r0ip(ropchain, http_ropvaddr, 1);
@@ -584,12 +776,15 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 
 	ropgen_callfunc(ropchain, http_ropvaddr, ROP_strncpy, params);//strncpy(input_valuebuf, curent->new_value, strlen(input_valuebuf)+1);
 
+	ropgen_checkcond_necontinue_eqjump(&ropchain_block1, &ropvaddr_block1, *http_ropvaddr);
+
 	ropchain_block1 = *ropchain;//break;
 	ropvaddr_block1 = *http_ropvaddr;
 	ropgen_stackpivot(ropchain, http_ropvaddr, 0);
 
 	ropgen_checkcond_eqcontinue_nejump(&ropchain_block0, &ropvaddr_block0, *http_ropvaddr);
 	ropgen_checkcond_eqcontinue_nejump(&ropchain_block3, &ropvaddr_block3, *http_ropvaddr);
+	ropgen_checkcond_eqcontinue_nejump(&ropchain_block4, &ropvaddr_block4, *http_ropvaddr);
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);//curent = curent->next_vaddr;
 	ropgen_movr1r0(ropchain, http_ropvaddr);
@@ -834,7 +1029,7 @@ Result setuphaxx_httpheap_sharedmem()
 	u32 *ropchain_block0, ropvaddr_block0;
 	u32 *ropchain_block1, ropvaddr_block1;
 
-	u32 ropallocsize = 0x3000;
+	u32 ropallocsize = 0x4000;
 	u32 ropoffset = 0x200;
 	u32 bakropoff = ropoffset + ropallocsize;
 	u32 roplaunch_bakaddr;
@@ -1012,6 +1207,7 @@ Result setuphaxx_httpheap_sharedmem()
 		{
 			*((u32*)(ropheap+0x1c)) = curent->vtableptr;
 			if(*((u32*)curent->new_url))*((u32*)(ropheap+0x20)) = curent->new_url;
+			curent->lastmatch_id = 0;
 			break;
 		}
 		*/
@@ -1042,6 +1238,11 @@ Result setuphaxx_httpheap_sharedmem()
 		ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x20, 1);
 
 		ropgen_checkcond_necontinue_eqjump(&ropchain_block1, &ropvaddr_block1, ropvaddr);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);
+		ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturlctx, lastmatch_id) - 4);
+		ropgen_writeu32(&ropchain, &ropvaddr, 0, 0, 0);//curent->lastmatch_id = 0;
+
 		ropchain_block1 = ropchain;//break;
 		ropvaddr_block1 = ropvaddr;
 		ropgen_stackpivot(&ropchain, &ropvaddr, 0);
