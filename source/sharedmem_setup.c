@@ -133,8 +133,8 @@ typedef struct {
 targeturl_requestoverridectx reqoverride_nascuseragent = {
 	.id = 1,
 	.name = "User-Agent",
-	//.new_value = "CTR FPD/0004"
-	.new_value = "CTR FPD/0003"//Supposed to trigger the sysupdate-required message on latest sysver, doesn't always happen though(the modified UA/form are sent fine when it doesn't trigger the message).
+	.new_value = "CTR FPD/0004"
+	//.new_value = "CTR FPD/0003"//Supposed to trigger the sysupdate-required message on latest sysver, doesn't always happen though(the modified UA/form are sent fine when it doesn't trigger the message).
 };
 
 targeturl_requestoverridectx reqoverride_nascform_fpdver = {
@@ -148,8 +148,8 @@ targeturl_requestoverridectx reqoverride_actheader_mint_appver = {
 	.id = 7,
 	.required_id = 5,
 	.name = "X-Nintendo-Application-Version",
-	//.new_value = "000F"
-	.new_value = "000E"//Trigger the sysupdate-required message on latest sysver.
+	.new_value = "000F"
+	//.new_value = "000E"//Trigger the sysupdate-required message on latest sysver.
 };
 
 targeturl_requestoverridectx reqoverride_actheader_eshop_appver = {
@@ -157,8 +157,8 @@ targeturl_requestoverridectx reqoverride_actheader_eshop_appver = {
 	.id = 6,
 	.required_id = 4,
 	.name = "X-Nintendo-Application-Version",
-	//.new_value = "0014"
-	.new_value = "0013"//Trigger the sysupdate-required message on latest sysver.
+	.new_value = "0014"
+	//.new_value = "0013"//Trigger the sysupdate-required message on latest sysver.
 };
 
 targeturl_requestoverridectx reqoverride_actheader_mint_titleids[] = {
@@ -249,8 +249,8 @@ targeturl_requestoverridectx reqoverride_actheader_sysver = {
 	.next = &reqoverride_actheader_eshop_titleids[0],
 	.id = 3,
 	.name = "X-Nintendo-System-Version",
-	//.new_value = "01F0"
-	.new_value = "01E0"//Trigger the sysupdate-required message on latest sysver.
+	.new_value = "01F0"
+	//.new_value = "01E0"//Trigger the sysupdate-required message on latest sysver.
 };
 
 targeturlctx targeturl_list[] = {
