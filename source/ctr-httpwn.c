@@ -471,6 +471,9 @@ Result httpwn_setup()
 
 	targeturlctx *first_targeturlctx = NULL;
 
+	FILE *f;
+	char *serverconfig_localpath = "server_config.xml";
+
 	ret = amInit();
 	if(ret!=0)
 	{
@@ -540,9 +543,45 @@ Result httpwn_setup()
 	if(ret!=0)
 	{
 		printf("Config downloading failed: 0x%08x.\n", (unsigned int)ret);
-		httpcExit();
-		free(http_codebin_buf);
-		return ret;
+
+		f = fopen(serverconfig_localpath, "rb");
+		if(f)
+		{
+			printf("Use the cached server_config from SD instead?\nPress the A button to continue, B to abort.\n");
+			while(1)
+			{
+				gspWaitForVBlank();
+				hidScanInput();
+				if(hidKeysDown() & KEY_A)break;
+				if(hidKeysDown() & KEY_B)
+				{
+					fclose(f);
+					httpcExit();
+					free(http_codebin_buf);
+					return ret;
+				}
+			}
+
+			memset(filebuffer, 0, filebuffer_size);
+			fread(filebuffer, 1, filebuffer_size-1, f);
+			fclose(f);
+		}
+		else
+		{
+			httpcExit();
+			free(http_codebin_buf);
+			return ret;
+		}
+	}
+	else
+	{
+		unlink(serverconfig_localpath);
+		f = fopen(serverconfig_localpath, "wb");
+		if(f)
+		{
+			fwrite(filebuffer, 1, strlen((char*)filebuffer), f);
+			fclose(f);
+		}
 	}
 
 	ret = config_parse(&first_targeturlctx, (char*)filebuffer);
