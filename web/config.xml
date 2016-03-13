@@ -60,22 +60,6 @@
 			<value>0004001000022900</value>
 		</requestoverride>
 
-		<!-- KOR -->
-		<requestoverride type="reqheader">
-			<id>4</id>
-			<setid_onmatch>1</setid_onmatch>
-			<name>X-Nintendo-Title-ID</name>
-			<value>0004001000027900</value>
-		</requestoverride>
-
-		<!-- TWN -->
-		<requestoverride type="reqheader">
-			<id>4</id>
-			<setid_onmatch>1</setid_onmatch>
-			<name>X-Nintendo-Title-ID</name>
-			<value>0004001000028900</value>
-		</requestoverride>
-
 		<!-- mint titleIDs. -->
 
 		<!-- JPN -->
@@ -102,25 +86,87 @@
 			<value>000400300000D602</value>
 		</requestoverride>
 
-		<!-- KOR -->
+		<!-- System Settings titleIDs. -->
+
+		<!-- JPN -->
 		<requestoverride type="reqheader">
-			<id>5</id>
+			<id>6</id>
 			<setid_onmatch>1</setid_onmatch>
 			<name>X-Nintendo-Title-ID</name>
-			<value>000400300000E302</value>
+			<value>0004001000020000</value>
 		</requestoverride>
 
-		<!-- TWN -->
+		<!-- USA -->
 		<requestoverride type="reqheader">
-			<id>5</id>
+			<id>6</id>
 			<setid_onmatch>1</setid_onmatch>
 			<name>X-Nintendo-Title-ID</name>
-			<value>000400300000E902</value>
+			<value>0004001000021000</value>
+		</requestoverride>
+
+		<!-- EUR -->
+		<requestoverride type="reqheader">
+			<id>6</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>0004001000022000</value>
+		</requestoverride>
+
+		<!-- System Transfer titleIDs. -->
+
+		<!-- JPN -->
+		<requestoverride type="reqheader">
+			<id>7</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>0004001000020A00</value>
+		</requestoverride>
+
+		<!-- USA -->
+		<requestoverride type="reqheader">
+			<id>7</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>0004001000021A00</value>
+		</requestoverride>
+
+		<!-- EUR -->
+		<requestoverride type="reqheader">
+			<id>7</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>0004001000022A00</value>
+		</requestoverride>
+
+		<!-- NNID Settings titleIDs. -->
+
+		<!-- JPN -->
+		<requestoverride type="reqheader">
+			<id>8</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>000400100002BF00</value>
+		</requestoverride>
+
+		<!-- USA -->
+		<requestoverride type="reqheader">
+			<id>8</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>000400100002C000</value>
+		</requestoverride>
+
+		<!-- EUR -->
+		<requestoverride type="reqheader">
+			<id>8</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>000400100002C100</value>
 		</requestoverride>
 
 		<!-- Remaster version override for eShop app. -->
 		<requestoverride type="reqheader">
-			<id>6</id>
+			<id>9</id>
 			<required_id>4</required_id>
 			<name>X-Nintendo-Application-Version</name>
 			<new_value>0014</new_value>
@@ -129,11 +175,35 @@
 
 		<!-- Remaster version override for mint. -->
 		<requestoverride type="reqheader">
-			<id>7</id>
+			<id>10</id>
 			<required_id>5</required_id>
 			<name>X-Nintendo-Application-Version</name>
 			<new_value>000F</new_value>
 			<!-- <new_value>000E</new_value> --> <!-- Trigger the sysupdate-required message on latest sysver. -->
+		</requestoverride>
+
+		<!-- Remaster version override for System Settings. -->
+		<requestoverride type="reqheader">
+			<id>11</id>
+			<required_id>6</required_id>
+			<name>X-Nintendo-Application-Version</name>
+			<new_value>0009</new_value>
+		</requestoverride>
+
+		<!-- Remaster version override for System Transfer. -->
+		<requestoverride type="reqheader">
+			<id>12</id>
+			<required_id>7</required_id>
+			<name>X-Nintendo-Application-Version</name>
+			<new_value>0006</new_value>
+		</requestoverride>
+
+		<!-- Remaster version override for NNID Settings. -->
+		<requestoverride type="reqheader">
+			<id>13</id>
+			<required_id>8</required_id>
+			<name>X-Nintendo-Application-Version</name>
+			<new_value>0003</new_value>
 		</requestoverride>
 	</targeturl>
 
