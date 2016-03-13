@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <3ds.h>
 
+#include "config.h"
+
 extern vu32 *httpheap_sharedmem;
 extern vu32 *ropvmem_sharedmem;
 
@@ -77,7 +79,7 @@ u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE = 0x0011b744;//Vtable for the obj
 u32 ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE = 0x108;//Size of the vtable for the objptr from httpc_cmdhandler *(_this+16).
 
 static u32 ropvmem_base = 0x0f000000;
-u32 ropvmem_size = 0xa000;
+u32 ropvmem_size = 0x10000;
 
 u32 httpheap_size = 0x22000;
 
@@ -87,199 +89,6 @@ static u32 condcallfunc_objaddr;
 static u32 __httpmainthread_cmdhandler_stackframe = 0x0ffffe28;
 
 static u32 ropheap = 0x0ffff000;//Main-thread stack-bottom.
-
-typedef struct _targeturl_requestoverridectx {
-	u32 next_vaddr;//Address of the next struct in the list in HTTP-sysmodule memory.
-	struct _targeturl_requestoverridectx *next;//Src data to copy to next_sharedmemptr.
-	struct _targeturl_requestoverridectx *next_sharedmemptr;
-
-	u32 id;//Normally this should be unique, but it can be shared with multiple contexts for having required_id trigger with multiple contexts.
-	u32 setid_onmatch;//When non-zero, copy the id value to a field in the targeturlctx when matching request data is found.
-	u32 required_id;//When non-zero, this value must match the field referenced above in the targeturlctx in order for the request data to completely match.
-
-	char name[0x40];//Must match the entire input name.
-	char value[0x40];//Optional, when set this must match the entire input value.
-	char new_value[0x40];
-} targeturl_requestoverridectx;
-
-typedef enum {
-	TARGETURLCAP_AddRequestHeader = 1<<0, //Override the value-data used for certain headers.
-	TARGETURLCAP_AddPostDataAscii = 1<<1, //Override the value-data used for certain form-fields.
-	TARGETURLCAP_SendPOSTDataRawTimeout = 2<<0, //NOP SendPOSTDataRawTimeout.
-} targeturl_caps;//Bitmask of capabilities, 0 = none(vtable-ptr is left at the original one).
-
-typedef struct {
-	u32 next_vaddr;//Address of the next struct in the list in HTTP-sysmodule memory.
-
-	targeturl_caps caps;
-
-	u32 lastmatch_id;//Set to zero when the CreateContext ROP-chain runs with this ctx. This is the targeturlctx field mentioned in requestoverridectx.
-
-	u32 vtableptr;
-	u32 *vtable_sharedmemptr;
-
-	u32 reqheader_first_vaddr;//Address of the first struct in the list in HTTP-sysmodule memory for request-headers. Used with AddRequestHeader.
-	targeturl_requestoverridectx *reqheader;
-	targeturl_requestoverridectx *reqheader_sharedmemptr;
-
-	u32 postform_first_vaddr;//Address of the first struct in the list in HTTP-sysmodule memory for post-forms. Used with AddPostDataAscii.
-	targeturl_requestoverridectx *postform;
-	targeturl_requestoverridectx *postform_sharedmemptr;
-
-	char url[0x100];//Target URL to compare the CreateContext input URL with. The compare will not include the NUL-terminator in this target URL, hence the check will pass when there's additional chars following the matched URL. This is needed due to the multiple account.nintendo.net URLs that need targeted + handled all the same way.
-	char new_url[0x100];//Optional, when set the specified URL will overwrite the URL used with CreateContext, NUL-terminator included.
-} targeturlctx;
-
-targeturl_requestoverridectx reqoverride_nascuseragent = {
-	.id = 1,
-	.name = "User-Agent",
-	.new_value = "CTR FPD/0004"
-	//.new_value = "CTR FPD/0003"//Supposed to trigger the sysupdate-required message on latest sysver, doesn't always happen though(the modified UA/form are sent fine when it doesn't trigger the message).
-};
-
-targeturl_requestoverridectx reqoverride_nascform_fpdver = {
-	.id = 2,
-	.name = "fpdver",
-	//.new_value = "MDAwNA**"//Base64-encoded "0004".
-	.new_value = "MDAwMw**"//Base64-encoded "0003".
-};
-
-targeturl_requestoverridectx reqoverride_actheader_mint_appver = {
-	.id = 7,
-	.required_id = 5,
-	.name = "X-Nintendo-Application-Version",
-	.new_value = "000F"
-	//.new_value = "000E"//Trigger the sysupdate-required message on latest sysver.
-};
-
-targeturl_requestoverridectx reqoverride_actheader_eshop_appver = {
-	.next = &reqoverride_actheader_mint_appver,
-	.id = 6,
-	.required_id = 4,
-	.name = "X-Nintendo-Application-Version",
-	.new_value = "0014"
-	//.new_value = "0013"//Trigger the sysupdate-required message on latest sysver.
-};
-
-targeturl_requestoverridectx reqoverride_actheader_mint_titleids[] = {
-	{
-		.next = &reqoverride_actheader_mint_titleids[1],
-		.id = 5,
-		.setid_onmatch = 1,
-		.name = "X-Nintendo-Title-ID",
-		.value = "000400300000C602"//JPN
-	},
-
-	{
-		.next = &reqoverride_actheader_mint_titleids[2],
-		.id = 5,
-		.setid_onmatch = 1,
-		.name = "X-Nintendo-Title-ID",
-		.value = "000400300000CE02"//USA
-	},
-
-	{
-		.next = &reqoverride_actheader_mint_titleids[3],
-		.id = 5,
-		.setid_onmatch = 1,
-		.name = "X-Nintendo-Title-ID",
-		.value = "000400300000D602"//EUR
-	},
-
-	{
-		.next = &reqoverride_actheader_mint_titleids[4],
-		.id = 5,
-		.setid_onmatch = 1,
-		.name = "X-Nintendo-Title-ID",
-		.value = "000400300000E302"//KOR
-	},
-
-	{
-		.next = &reqoverride_actheader_eshop_appver,
-		.id = 5,
-		.setid_onmatch = 1,
-		.name = "X-Nintendo-Title-ID",
-		.value = "000400300000E902"//TWN
-	}
-};
-
-targeturl_requestoverridectx reqoverride_actheader_eshop_titleids[] = {
-	{
-		.next = &reqoverride_actheader_eshop_titleids[1],
-		.id = 4,
-		.setid_onmatch = 1,
-		.name = "X-Nintendo-Title-ID",
-		.value = "0004001000020900"//JPN
-	},
-
-	{
-		.next = &reqoverride_actheader_eshop_titleids[2],
-		.id = 4,
-		.setid_onmatch = 1,
-		.name = "X-Nintendo-Title-ID",
-		.value = "0004001000021900"//USA
-	},
-
-	{
-		.next = &reqoverride_actheader_eshop_titleids[3],
-		.id = 4,
-		.setid_onmatch = 1,
-		.name = "X-Nintendo-Title-ID",
-		.value = "0004001000022900"//EUR
-	},
-
-	{
-		.next = &reqoverride_actheader_eshop_titleids[4],
-		.id = 4,
-		.setid_onmatch = 1,
-		.name = "X-Nintendo-Title-ID",
-		.value = "0004001000027900"//KOR
-	},
-
-	{
-		.next = &reqoverride_actheader_mint_titleids[0],
-		.id = 4,
-		.setid_onmatch = 1,
-		.name = "X-Nintendo-Title-ID",
-		.value = "0004001000028900"//TWN
-	}
-};
-
-targeturl_requestoverridectx reqoverride_actheader_sysver = {
-	.next = &reqoverride_actheader_eshop_titleids[0],
-	.id = 3,
-	.name = "X-Nintendo-System-Version",
-	.new_value = "01F0"
-	//.new_value = "01E0"//Trigger the sysupdate-required message on latest sysver.
-};
-
-targeturlctx targeturl_list[] = {
-	{//This is the URL used for doing the actual sysupdate check / getting the the list of sysupdate titles.
-		.caps = TARGETURLCAP_SendPOSTDataRawTimeout,
-		.url = "https://nus.c.shop.nintendowifi.net/nus/services/NetUpdateSOAP",
-		.new_url = "http://10.0.0.30/ctr-httpwn/NetUpdateSOAP.php"//"https://yls8.mtheall.com/ctr-httpwn/NetUpdateSOAP.php"
-	},
-
-	{//NNID
-		.caps = TARGETURLCAP_AddRequestHeader,
-		.url = "https://account.nintendo.net/",
-		.reqheader = &reqoverride_actheader_sysver
-	},
-
-	{//Used by friends-sysmodule and AC-sysmodule, however it's unknown if AC ever runs the code for it.
-		.caps = TARGETURLCAP_AddRequestHeader | TARGETURLCAP_AddPostDataAscii,
-		.url = "https://nasc.nintendowifi.net/ac",
-		//.new_url = "http://10.0.0.30/",
-		.reqheader = &reqoverride_nascuseragent,
-		.postform = &reqoverride_nascform_fpdver
-	},
-
-	/*
-	{//Browser-version-check. Disabled since this is useless without an implemented method for overwriting main-serv-sessions' httpc_cmdhandler obj+16 vtableptr, after the initial ctr-httpwn run.
-		.url = "https://cbvc.cdn.nintendo.net/",
-		.new_url = "http://10.0.0.30/ctr-httpwn/cbvc"//Just a static page returning '0'.
-	}*/
-};
 
 void ropgen_addword(u32 **ropchain, u32 *http_ropvaddr, u32 value)
 {
@@ -1013,7 +822,7 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	return 0;
 }
 
-Result setuphaxx_httpheap_sharedmem()
+Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 {
 	u32 pos;
 	u32 tmp_pos;
@@ -1046,10 +855,18 @@ Result setuphaxx_httpheap_sharedmem()
 	u32 *condcallfunc_objaddr_sharedmemptr = NULL;
 	u32 *__custom_mainservsession_vtable_sharedmemptr = NULL;
 
+	targeturlctx *cur_targeturlctx;
 	u32 targeturl_list_vaddr;
 	u32 *targeturl_list_sharedmemptr = NULL;
+	u8 *targeturl_list_sharedmemptr8 = NULL;
 	u32 targeturl_list_size, targeturl_list_entcount;
 	targeturl_caps tmpcaps;
+
+	if(first_targeturlctx==NULL)
+	{
+		printf("setuphaxx_httpheap_sharedmem(): The input list is empty.\n");
+		return -9;
+	}
 
 	mainrop_endaddr = ropvmem_base + ropvmem_size;
 
@@ -1057,21 +874,32 @@ Result setuphaxx_httpheap_sharedmem()
 
 	__custom_mainservsession_vtable = memalloc_ropvmem_dataheap(&mainrop_endaddr, &__custom_mainservsession_vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
 
-	targeturl_list_size = sizeof(targeturl_list);
-	targeturl_list_entcount = targeturl_list_size / sizeof(targeturlctx);
-	targeturl_list_vaddr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &targeturl_list_sharedmemptr, targeturl_list_size);
+	targeturl_list_entcount = 0;
+	cur_targeturlctx = first_targeturlctx;
+	while(cur_targeturlctx)
+	{
+		targeturl_list_entcount++;
+		cur_targeturlctx = cur_targeturlctx->next;
+	}
 
-	for(pos=0; pos<targeturl_list_entcount; pos++)
+	targeturl_list_size = targeturl_list_entcount * sizeof(targeturlctx);
+	targeturl_list_vaddr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &targeturl_list_sharedmemptr, targeturl_list_size);
+	targeturl_list_sharedmemptr8 = (u8*)targeturl_list_sharedmemptr;
+
+	cur_targeturlctx = first_targeturlctx;
+	pos = 0;
+	while(cur_targeturlctx)
 	{
 		tmp_pos = targeturl_list_vaddr + ((pos+1)*sizeof(targeturlctx));
-		if(pos+1 < targeturl_list_entcount)targeturl_list[pos].next_vaddr = tmp_pos;
+		if(pos+1 < targeturl_list_entcount)cur_targeturlctx->next_vaddr = tmp_pos;
 
-		if(targeturl_list[pos].caps==0)continue;
+		cur_targeturlctx->vtableptr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &cur_targeturlctx->vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE + 0x4);
 
-		targeturl_list[pos].vtableptr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &targeturl_list[pos].vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE + 0x4);
+		allocate_reqoverride_list(&mainrop_endaddr, &cur_targeturlctx->reqheader, &cur_targeturlctx->reqheader_sharedmemptr, &cur_targeturlctx->reqheader_first_vaddr);
+		allocate_reqoverride_list(&mainrop_endaddr, &cur_targeturlctx->postform, &cur_targeturlctx->postform_sharedmemptr, &cur_targeturlctx->postform_first_vaddr);
 
-		allocate_reqoverride_list(&mainrop_endaddr, &targeturl_list[pos].reqheader, &targeturl_list[pos].reqheader_sharedmemptr, &targeturl_list[pos].reqheader_first_vaddr);
-		allocate_reqoverride_list(&mainrop_endaddr, &targeturl_list[pos].postform, &targeturl_list[pos].postform_sharedmemptr, &targeturl_list[pos].postform_first_vaddr);
+		cur_targeturlctx = cur_targeturlctx->next;
+		pos++;
 	}
 
 	//Setup the ROP-chain used by the vtable funcptrs from the end of this function.
@@ -1360,14 +1188,16 @@ Result setuphaxx_httpheap_sharedmem()
 	ptr[0x8>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//Overwrite the vtable funcptr for CreateContext.
 
 	//Setup the custom vtables for context-sessions.
-	for(pos=0; pos<targeturl_list_entcount; pos++)
+	cur_targeturlctx = first_targeturlctx;
+	pos = 0;
+	for(; cur_targeturlctx; cur_targeturlctx = cur_targeturlctx->next, pos++)
 	{
 		tmp_pos = targeturl_list_vaddr + pos*sizeof(targeturlctx);
 
-		ptr = targeturl_list[pos].vtable_sharedmemptr;
+		ptr = cur_targeturlctx->vtable_sharedmemptr;
 		if(ptr==NULL)continue;
 
-		tmpcaps = targeturl_list[pos].caps;
+		tmpcaps = cur_targeturlctx->caps;
 
 		memcpy(ptr, &http_codebin_buf[ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
 		//Overwrite the vtable funcptrs.
@@ -1378,11 +1208,19 @@ Result setuphaxx_httpheap_sharedmem()
 
 		ptr[ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE>>2] = tmp_pos;
 
-		init_reqoverride_list(targeturl_list[pos].reqheader, targeturl_list[pos].reqheader_sharedmemptr);
-		init_reqoverride_list(targeturl_list[pos].postform, targeturl_list[pos].postform_sharedmemptr);
+		init_reqoverride_list(cur_targeturlctx->reqheader, cur_targeturlctx->reqheader_sharedmemptr);
+		init_reqoverride_list(cur_targeturlctx->postform, cur_targeturlctx->postform_sharedmemptr);
 	}
 
-	memcpy(targeturl_list_sharedmemptr, targeturl_list, targeturl_list_size);
+	cur_targeturlctx = first_targeturlctx;
+	pos = 0;
+	while(cur_targeturlctx)
+	{
+		memcpy(&targeturl_list_sharedmemptr8[pos], cur_targeturlctx, sizeof(targeturlctx));
+
+		cur_targeturlctx = cur_targeturlctx->next;
+		pos+= sizeof(targeturlctx);
+	}
 
 	//Overwrite every main-serv-sesssion httpc_cmdhandler object *(_this+16) vtable ptr with the custom one.
 

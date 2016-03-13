@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <3ds.h>
 
+#include "config.h"
+
 #include "cmpblock_bin.h"
 
 #include "letsencryptauthorityx1_der.h"
@@ -25,7 +27,7 @@ u32 *http_codebin_buf32;
 u32 http_codebin_size;
 
 Result init_hax_sharedmem(u32 *tmpbuf);
-Result setuphaxx_httpheap_sharedmem();
+Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx);
 
 Result loadcodebin(u64 programid, FS_MediaType mediatype, u8 **codebin_buf, u32 *codebin_size);
 
@@ -199,7 +201,7 @@ Result setuphax_http_sslc(Handle httpc_sslc_handle, u8 *cert, u32 certsize)
 	return ret;
 }
 
-Result http_haxx(char *requrl, u8 *cert, u32 certsize)
+Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targeturlctx)
 {
 	Result ret=0;
 	httpcContext context;
@@ -308,7 +310,7 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize)
 	printf("Successfully mapped the httpheap+ropvmem sharedmem.\n");
 
 	printf("Initializing the haxx under the httpheap+ropvmem sharedmem...\n");
-	ret = setuphaxx_httpheap_sharedmem();
+	ret = setuphaxx_httpheap_sharedmem(first_targeturlctx);
 
 	if(R_FAILED(ret))
 	{
@@ -385,7 +387,7 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize)
 	return 0;
 }
 
-Result download_config(char *url, u8 *cert, u32 certsize)
+Result download_config(char *url, u8 *cert, u32 certsize, u8 *filebuffer, u32 dlsize)
 {
 	Result ret=0;
 	u32 statuscode=0;
@@ -429,6 +431,19 @@ Result download_config(char *url, u8 *cert, u32 certsize)
 		return ret;
 	}
 
+	printf("statuscode = %u.\n", (unsigned int)statuscode);
+
+	if(statuscode==200)
+	{
+		printf("Downloading the data...\n");
+		ret = httpcDownloadData(&context, filebuffer, dlsize, NULL);
+		if(ret!=0)
+		{
+			httpcCloseContext(&context);
+			return ret;
+		}
+	}
+
 	printf("Closing the context...\n");
 	ret = httpcCloseContext(&context);
 	if(R_FAILED(ret))
@@ -437,7 +452,7 @@ Result download_config(char *url, u8 *cert, u32 certsize)
 		return ret;
 	}
 
-	printf("statuscode = %u.\n", (unsigned int)statuscode);
+	if(statuscode!=200)return -5;
 
 	return 0;
 }
@@ -450,6 +465,11 @@ Result httpwn_setup()
 
 	u8 *cert = (u8*)letsencryptauthorityx1_der;
 	u32 certsize = letsencryptauthorityx1_der_size;
+
+	u8 *filebuffer;
+	u32 filebuffer_size = 0x100000;
+
+	targeturlctx *first_targeturlctx = NULL;
 
 	ret = amInit();
 	if(ret!=0)
@@ -503,17 +523,42 @@ Result httpwn_setup()
 		return ret;
 	}
 
+	filebuffer = malloc(filebuffer_size);
+	if(filebuffer==NULL)
+	{
+		printf("Failed to allocate the config filebuffer.\n");
+		ret = -2;
+		httpcExit();
+		free(http_codebin_buf);
+		return ret;
+		
+	}
+	memset(filebuffer, 0, filebuffer_size);
+
 	printf("Downloading config...\n");
-	ret = download_config("https://yls8.mtheall.com/ctr-httpwn/config", cert, certsize);
+	ret = download_config("http://10.0.0.30/ctr-httpwn/config.xml"/*"https://yls8.mtheall.com/ctr-httpwn/config.xml"*/, cert, certsize, filebuffer, filebuffer_size-1);
 	if(ret!=0)
 	{
 		printf("Config downloading failed: 0x%08x.\n", (unsigned int)ret);
 		httpcExit();
+		free(http_codebin_buf);
+		return ret;
+	}
+
+	ret = config_parse(&first_targeturlctx, (char*)filebuffer);
+	free(filebuffer);
+
+	if(ret!=0)
+	{
+		printf("Config parsing failed: 0x%08x.\n", (unsigned int)ret);
+		httpcExit();
+		free(http_codebin_buf);
 		return ret;
 	}
 
 	printf("Preparing the haxx...\n");
-	ret = http_haxx("http://localhost/", cert, certsize);//URL doesn't matter much since this won't actually be requested over the network.
+	ret = http_haxx("http://localhost/", cert, certsize, first_targeturlctx);//URL doesn't matter much since this won't actually be requested over the network.
+	config_freemem(&first_targeturlctx);
 	httpcExit();
 	free(http_codebin_buf);
 	if(ret!=0)

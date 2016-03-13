@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<targets>
+	<targeturl> <!-- This is the URL used for doing the actual sysupdate check / getting the the list of sysupdate titles. -->
+		<caps>SendPOSTDataRawTimeout</caps>
+		<url>https://nus.c.shop.nintendowifi.net/nus/services/NetUpdateSOAP</url>
+		<new_url>http://10.0.0.30/ctr-httpwn/NetUpdateSOAP.php</new_url> <!-- <new_url>https://yls8.mtheall.com/ctr-httpwn/NetUpdateSOAP</new_url> -->
+	</targeturl>
+
+	<targeturl>
+		<caps>TARGETURLCAP_AddRequestHeader TARGETURLCAP_AddPostDataAscii</caps>
+		<url>https://nasc.nintendowifi.net/ac</url>
+
+		<requestoverride type="reqheader">
+			<name>User-Agent</name>
+			<!-- <new_value>CTR FPD/0003</new_value> -->
+			<new_value>CTR FPD/0004</new_value>
+		</requestoverride>
+
+		<requestoverride type="postform">
+			<name>fpdver</name>
+			<!-- <new_value>MDAwMw**</new_value>--> <!-- Base64-encoded "0003". Supposed to trigger the sysupdate-required message on latest sysver, doesn't always happen though(the modified UA/form are sent fine when it doesn't trigger the message). -->
+			<new_value>MDAwNA**</new_value> <!--Base64-encoded "0004". -->
+		</requestoverride>
+	</targeturl>
+
+	<targeturl> <!-- NNID -->
+		<caps>AddRequestHeader</caps>
+		<url>https://account.nintendo.net/</url>
+
+		<requestoverride type="reqheader">
+			<id>3</id>
+			<name>X-Nintendo-System-Version</name>
+			<new_value>01F0</new_value> <!-- NVer<<4 -->
+			<!-- <new_value>01E0</new_value> --> <!-- Trigger the sysupdate-required message on latest sysver. -->
+		</requestoverride>
+
+		<!-- System eShop application titleIDs. -->
+
+		<!-- JPN -->
+		<requestoverride type="reqheader">
+			<id>4</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>0004001000020900</value>
+		</requestoverride>
+
+		<!-- USA -->
+		<requestoverride type="reqheader">
+			<id>4</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>0004001000021900</value>
+		</requestoverride>
+
+		<!-- EUR -->
+		<requestoverride type="reqheader">
+			<id>4</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>0004001000022900</value>
+		</requestoverride>
+
+		<!-- KOR -->
+		<requestoverride type="reqheader">
+			<id>4</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>0004001000027900</value>
+		</requestoverride>
+
+		<!-- TWN -->
+		<requestoverride type="reqheader">
+			<id>4</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>0004001000028900</value>
+		</requestoverride>
+
+		<!-- mint titleIDs. -->
+
+		<!-- JPN -->
+		<requestoverride type="reqheader">
+			<id>5</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>000400300000C602</value>
+		</requestoverride>
+
+		<!-- USA -->
+		<requestoverride type="reqheader">
+			<id>5</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>000400300000CE02</value>
+		</requestoverride>
+
+		<!-- EUR -->
+		<requestoverride type="reqheader">
+			<id>5</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>000400300000D602</value>
+		</requestoverride>
+
+		<!-- KOR -->
+		<requestoverride type="reqheader">
+			<id>5</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>000400300000E302</value>
+		</requestoverride>
+
+		<!-- TWN -->
+		<requestoverride type="reqheader">
+			<id>5</id>
+			<setid_onmatch>1</setid_onmatch>
+			<name>X-Nintendo-Title-ID</name>
+			<value>000400300000E902</value>
+		</requestoverride>
+
+		<!-- Remaster version override for eShop app. -->
+		<requestoverride type="reqheader">
+			<id>6</id>
+			<required_id>4</required_id>
+			<name>X-Nintendo-Application-Version</name>
+			<new_value>0014</new_value>
+			<!-- <new_value>0013</new_value> --> <!-- Trigger the sysupdate-required message on latest sysver. -->
+		</requestoverride>
+
+		<!-- Remaster version override for mint. -->
+		<requestoverride type="reqheader">
+			<id>7</id>
+			<required_id>5</required_id>
+			<name>X-Nintendo-Application-Version</name>
+			<new_value>000F</new_value>
+			<!-- <new_value>000E</new_value> --> <!-- Trigger the sysupdate-required message on latest sysver. -->
+		</requestoverride>
+	</targeturl>
+
+</targets>
+
