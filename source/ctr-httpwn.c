@@ -231,8 +231,6 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 		return ret;
 	}
 
-	printf("Successfully located the linearaddr for sharedmem: 0x%08x.\n", (unsigned int)linearaddr);
-
 	printf("Writing the haxx to physmem...\n");
 	ret = writehax_sharedmem_physmem(linearaddr);
 	if(ret!=0)
@@ -247,11 +245,8 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 	if(R_FAILED(ret))
 	{
 		printf("httpcCloseContext returned 0x%08x.\n", (unsigned int)ret);
-		if(ret==0xC920181A)printf("This error means the HTTP sysmodule crashed.\n");
 		return ret;
 	}
-
-	printf("httpc_sslc_handle = 0x%08x.\n", (unsigned int)httpc_sslc_handle);
 
 	httpheap_sharedmem = (vu32*)mappableAlloc(httpheap_size);
 	if(httpheap_sharedmem==NULL)
@@ -307,14 +302,12 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 		return ret;
 	}
 
-	printf("Successfully mapped the httpheap+ropvmem sharedmem.\n");
-
-	printf("Initializing the haxx under the httpheap+ropvmem sharedmem...\n");
+	printf("Finishing haxx setup with sysmodule memory...\n");
 	ret = setuphaxx_httpheap_sharedmem(first_targeturlctx);
 
 	if(R_FAILED(ret))
 	{
-		printf("Failed to setup the haxx in the httpheap sharedmem: 0x%08x.\n", (unsigned int)ret);
+		printf("Failed to finish haxx setup: 0x%08x.\n", (unsigned int)ret);
 	}
 	else
 	{
@@ -337,7 +330,7 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 		return ret;
 	}
 
-	printf("Running setup with the sslc handle...\n");
+	printf("Running setup with sslc...\n");
 	ret = setuphax_http_sslc(httpc_sslc_handle, cert, certsize);
 
 	svcCloseHandle(httpc_sslc_handle);//Normally sslcExit should close this, but close it here too just in case.
@@ -348,40 +341,39 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 		return ret;
 	}
 
-	printf("Verifying that the haxx was setup correctly...\n");
+	printf("Testing httpc with non-targeted URLs...\n");
 
 	for(i=0; i<2; i++)
 	{
-		printf("Opening the context...\n");
 		ret = httpcOpenContext(&context, HTTPC_METHOD_POST, requrl, 1);
-		if(ret!=0)return ret;
+		if(R_FAILED(ret))
+		{
+			printf("httpcOpenContext returned 0x%08x, i=%u.\n", (unsigned int)ret, (unsigned int)i);
+			return ret;
+		}
 
-		printf("Setting the user-agent...\n");
 		ret = httpcAddRequestHeaderField(&context, "User-Agent", "ctr-httpwn/"VERSION);
-		if(ret!=0)
+		if(R_FAILED(ret))
 		{
+			printf("httpcAddRequestHeaderField returned 0x%08x, i=%u.\n", (unsigned int)ret, (unsigned int)i);
 			httpcCloseContext(&context);
 			return ret;
 		}
 
-		printf("Running httpcAddPostDataAscii...\n");
 		ret = httpcAddPostDataAscii(&context, "form_name", "form_value");
-		if(ret!=0)
+		if(R_FAILED(ret))
 		{
+			printf("httpcAddPostDataAscii returned 0x%08x, i=%u.\n", (unsigned int)ret, (unsigned int)i);
 			httpcCloseContext(&context);
 			return ret;
 		}
 
-		printf("Closing the context...\n");
 		ret = httpcCloseContext(&context);
 		if(R_FAILED(ret))
 		{
-			printf("httpcCloseContext returned 0x%08x.\n", (unsigned int)ret);
-			if(ret==0xC920181A)printf("This error means the HTTP sysmodule crashed.\n");
+			printf("httpcCloseContext returned 0x%08x, i=%u.\n", (unsigned int)ret, (unsigned int)i);
 			return ret;
 		}
-
-		printf("Starting the next verification round...\n");
 	}
 
 	return 0;
@@ -393,19 +385,21 @@ Result download_config(char *url, u8 *cert, u32 certsize, u8 *filebuffer, u32 dl
 	u32 statuscode=0;
 	httpcContext context;
 
-	printf("Opening the context...\n");
 	ret = httpcOpenContext(&context, HTTPC_METHOD_GET, url, 1);
-	if(R_FAILED(ret))return ret;
+	if(R_FAILED(ret))
+	{
+		printf("httpcOpenContext returned 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
 
-	printf("Setting the user-agent...\n");
 	ret = httpcAddRequestHeaderField(&context, "User-Agent", "ctr-httpwn/"VERSION);
 	if(R_FAILED(ret))
 	{
+		printf("httpcAddRequestHeaderField returned 0x%08x.\n", (unsigned int)ret);
 		httpcCloseContext(&context);
 		return ret;
 	}
 
-	printf("Adding the RootCA...\n");
 	ret = httpcAddTrustedRootCA(&context, cert, certsize);
 	if(R_FAILED(ret))
 	{
@@ -414,7 +408,6 @@ Result download_config(char *url, u8 *cert, u32 certsize, u8 *filebuffer, u32 dl
 		return ret;
 	}
 
-	printf("Starting the request...\n");
 	ret = httpcBeginRequest(&context);
 	if(R_FAILED(ret))
 	{
@@ -423,28 +416,25 @@ Result download_config(char *url, u8 *cert, u32 certsize, u8 *filebuffer, u32 dl
 		return ret;
 	}
 
-	printf("Getting the status-code...\n");
 	ret = httpcGetResponseStatusCode(&context, &statuscode, 0);
 	if(R_FAILED(ret))
 	{
+		printf("httpcGetResponseStatusCode returned 0x%08x.\n", (unsigned int)ret);
 		httpcCloseContext(&context);
 		return ret;
 	}
 
-	printf("statuscode = %u.\n", (unsigned int)statuscode);
-
 	if(statuscode==200)
 	{
-		printf("Downloading the data...\n");
 		ret = httpcDownloadData(&context, filebuffer, dlsize, NULL);
 		if(ret!=0)
 		{
+			printf("httpcDownloadData returned 0x%08x.\n", (unsigned int)ret);
 			httpcCloseContext(&context);
 			return ret;
 		}
 	}
 
-	printf("Closing the context...\n");
 	ret = httpcCloseContext(&context);
 	if(R_FAILED(ret))
 	{
@@ -452,12 +442,16 @@ Result download_config(char *url, u8 *cert, u32 certsize, u8 *filebuffer, u32 dl
 		return ret;
 	}
 
-	if(statuscode!=200)return -5;
+	if(statuscode!=200)
+	{
+		printf("Invalid statuscode: %u.\n", (unsigned int)statuscode);
+		return -5;
+	}
 
 	return 0;
 }
 
-Result httpwn_setup()
+Result httpwn_setup(char *serverconfig_localpath)
 {
 	Result ret = 0;
 	u64 http_sysmodule_titleid = 0x0004013000002902ULL;
@@ -472,7 +466,6 @@ Result httpwn_setup()
 	targeturlctx *first_targeturlctx = NULL;
 
 	FILE *f;
-	char *serverconfig_localpath = "server_config.xml";
 
 	ret = amInit();
 	if(ret!=0)
@@ -639,6 +632,10 @@ Result httpwn_setup()
 
 int main(int argc, char **argv)
 {
+	int abort=0;
+	FILE *f = NULL;
+	char *serverconfig_localpath = "server_config.xml";
+
 	Result ret = 0;
 
 	// Initialize services
@@ -648,10 +645,36 @@ int main(int argc, char **argv)
 
 	printf("ctr-httpwn %s by yellows8.\n", VERSION);
 
-	ret = httpwn_setup();
+	f = fopen(serverconfig_localpath, "rb");//Only run the below block when this file doesn't exist, which normally only happens when this app wasn't run before with the config file being downloaded successfully.
+	if(f)
+	{
+		fclose(f);
+	}
+	else
+	{
+		printf("Please read the documentation before continuing:\nhttps://github.com/yellows8/ctr-httpwn\nPress A to continue, B to abort.\n");
 
-	if(ret==0)printf("Done.\n");
+		while(1)
+		{
+			gspWaitForVBlank();
+			hidScanInput();
+			if(hidKeysDown() & KEY_A)break;
+			if(hidKeysDown() & KEY_B)
+			{
+				abort = 1;
+				break;
+			}
+		}
+	}
 
+	if(!abort)
+	{
+		ret = httpwn_setup(serverconfig_localpath);
+
+		if(ret==0)printf("Done.\n");
+	}
+
+	if(ret==0xC920181A)printf("This error means the HTTP sysmodule crashed.\n");
 	if(ret!=0)printf("An error occured. If this is an actual issue not related to user failure, please report this to here if it persists(or comment on an already existing issue if needed), with a screenshot: https://github.com/yellows8/ctr-httpwn/issues\n");
 
 	printf("Press the START button to exit.\n");
