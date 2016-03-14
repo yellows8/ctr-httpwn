@@ -601,14 +601,25 @@ Result httpwn_setup()
 		}
 	}
 
-	free(filebuffer);
-
 	if(ret!=0)
 	{
 		printf("Config parsing failed: 0x%08x.\n", (unsigned int)ret);
 		httpcExit();
 		free(http_codebin_buf);
+		free(filebuffer);
 		return ret;
+	}
+
+	f = fopen("user_nim_rootcertchain_rootca.der", "rb");
+	if(f)
+	{
+		printf("Loading user_nim_rootcertchain_rootca.der since it exists on SD, which will be used instead of the built-in ctr-httpwn cert...\n");
+
+		memset(filebuffer, 0, filebuffer_size);
+		certsize = fread(filebuffer, 1, filebuffer_size, f);
+		fclose(f);
+
+		cert = filebuffer;
 	}
 
 	printf("Preparing the haxx...\n");
@@ -616,6 +627,7 @@ Result httpwn_setup()
 	config_freemem(&first_targeturlctx);
 	httpcExit();
 	free(http_codebin_buf);
+	free(filebuffer);
 	if(ret!=0)
 	{
 		printf("Haxx setup failed: 0x%08x.\n", (unsigned int)ret);

@@ -4,7 +4,7 @@
 		<name>NetUpdateSOAP</name>
 		<caps>SendPOSTDataRawTimeout</caps>
 		<url>https://nus.c.shop.nintendowifi.net/nus/services/NetUpdateSOAP</url>
-		<new_url>http://10.0.0.30/ctr-httpwn/NetUpdateSOAP.php</new_url> <!-- <new_url>https://yls8.mtheall.com/ctr-httpwn/NetUpdateSOAP</new_url> -->
+		<new_url>https://yls8.mtheall.com/ctr-httpwn/NetUpdateSOAP.php</new_url>
 	</targeturl>
 
 	<targeturl>
