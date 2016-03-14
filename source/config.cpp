@@ -167,7 +167,7 @@ int config_parse(targeturlctx **first_targeturlctx, char *xml)
 			{
 				resetflag = 0;
 				xml_caps->QueryIntAttribute("reset", &resetflag);
-				if(resetflag)cur_targeturlctx->caps = (targeturl_caps)0;
+				if(resetflag)cur_targeturlctx->caps = TARGETURLCAP_NONE;
 
 				textptr = xml_caps->GetText();
 				if(textptr)
