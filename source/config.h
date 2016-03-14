@@ -43,11 +43,13 @@ typedef struct _targeturlctx {
 	targeturl_requestoverridectx *postform;
 	targeturl_requestoverridectx *postform_sharedmemptr;
 
+	char name[0x40];//Name of this entry, not used in the ROP at all.
 	char url[0x100];//Target URL to compare the CreateContext input URL with. The compare will not include the NUL-terminator in this target URL, hence the check will pass when there's additional chars following the matched URL. This is needed due to the multiple account.nintendo.net URLs that need targeted + handled all the same way.
 	char new_url[0x100];//Optional, when set the specified URL will overwrite the URL used with CreateContext, NUL-terminator included.
 } targeturlctx;
 
 int config_parse(targeturlctx **first_targeturlctx, char *xml);
+void config_freemem_reqoverride(targeturl_requestoverridectx **first_reqoverridectx);
 void config_freemem(targeturlctx **first_targeturlctx);
 
 #ifdef __cplusplus

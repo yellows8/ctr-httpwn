@@ -585,6 +585,22 @@ Result httpwn_setup()
 	}
 
 	ret = config_parse(&first_targeturlctx, (char*)filebuffer);
+
+	if(ret==0)
+	{
+		f = fopen("user_config.xml", "rb");
+		if(f)
+		{
+			printf("Loading+parsing user_config.xml since it exists on SD...\n");
+
+			memset(filebuffer, 0, filebuffer_size);
+			fread(filebuffer, 1, filebuffer_size-1, f);
+			fclose(f);
+
+			ret = config_parse(&first_targeturlctx, (char*)filebuffer);
+		}
+	}
+
 	free(filebuffer);
 
 	if(ret!=0)
