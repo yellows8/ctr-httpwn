@@ -115,7 +115,6 @@ for($i=0; $i<$targets_array_size; $i++)
 	</requestoverride>\n";
 }
 ?>
-
 <?xml version="1.0" encoding="UTF-8"?>
 <config>
 	<targeturl> <!-- This is the URL used for doing the actual sysupdate check / getting the the list of sysupdate titles. -->
