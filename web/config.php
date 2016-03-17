@@ -25,7 +25,7 @@ if($fpdver===FALSE || $fpdver==="")
 {
 	writeNormalLog("ctr-httpwn config.php: Failed to load a valid fpdver file. RESULT: 500");
 	header('HTTP/1.1 500 Internal Server Error');
-	die("A server-side error occured.\n");
+	die("The config xml is currently not available, probably due to a new sysupdate just being released. It will automatically become available once ninupdates sysupdate post-processing finishes.\n");
 }
 
 //Base64-encode fpdver, with '=' switched to '*'.
@@ -74,7 +74,7 @@ for($i=0; $i<$targets_array_size; $i++)
 	{
 		writeNormalLog("ctr-httpwn config.php: Failed to load a valid remaster_version file, for target $i. RESULT: 500");
 		header('HTTP/1.1 500 Internal Server Error');
-		die("A server-side error occured.\n");
+		die("The config xml is currently not available, probably due to a new sysupdate just being released. It will automatically become available once ninupdates sysupdate post-processing finishes.\n");
 	}
 
 	$targets_verarray[] = $remaster_version;
