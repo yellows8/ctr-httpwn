@@ -532,7 +532,7 @@ Result httpwn_setup(char *serverconfig_localpath)
 	memset(filebuffer, 0, filebuffer_size);
 
 	printf("Downloading config...\n");
-	ret = download_config("https://yls8.mtheall.com/ctr-httpwn/config.xml", cert, certsize, filebuffer, filebuffer_size-1);
+	ret = download_config("https://yls8.mtheall.com/ctr-httpwn/config.php", cert, certsize, filebuffer, filebuffer_size-1);
 	if(ret!=0)
 	{
 		printf("Config downloading failed: 0x%08x.\n", (unsigned int)ret);
