@@ -2,6 +2,16 @@
 
 include_once("/home/yellows8/ninupdates/api.php");
 
+$retval = ninupdates_api("gettitleversions", "ctr", "E", "000400DB00016302", 2);
+if($retval!=0)
+{
+	writeNormalLog("ctr-httpwn config.php: API returned error $retval, for NVer. RESULT: 500");
+	header('HTTP/1.1 500 Internal Server Error');
+	die("A server-side error occured.\n");
+}
+
+$NVer_hextitlever = sprintf("%04X", substr($ninupdatesapi_out_version_array[0], 1));
+
 $retval = ninupdates_api("gettitleversions", "ctr", "E", "0004013000003202", 2);
 if($retval!=0)
 {
@@ -148,7 +158,7 @@ for($i=0; $i<$targets_array_size; $i++)
 		<requestoverride type="reqheader">
 			<id>3</id>
 			<name>X-Nintendo-System-Version</name>
-			<new_value>01F0</new_value> <!-- NVer<<4 -->
+			<new_value><?=$NVer_hextitlever?></new_value>
 		</requestoverride>
 
 		<?=$reqoverrides?>
