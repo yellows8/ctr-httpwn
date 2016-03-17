@@ -379,7 +379,7 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 	return 0;
 }
 
-Result download_config(char *url, u8 *cert, u32 certsize, u8 *filebuffer, u32 dlsize)
+Result download_config(char *url, u8 *cert, u32 certsize, u8 *filebuffer, u32 dlsize, u32 *out_statuscode)
 {
 	Result ret=0;
 	u32 statuscode=0;
@@ -424,10 +424,12 @@ Result download_config(char *url, u8 *cert, u32 certsize, u8 *filebuffer, u32 dl
 		return ret;
 	}
 
-	if(statuscode==200)
+	if(out_statuscode)*out_statuscode = statuscode;
+
+	if(statuscode==200 || statuscode==500)
 	{
 		ret = httpcDownloadData(&context, filebuffer, dlsize, NULL);
-		if(ret!=0)
+		if(ret!=0 && statuscode==200)
 		{
 			printf("httpcDownloadData returned 0x%08x.\n", (unsigned int)ret);
 			httpcCloseContext(&context);
@@ -462,6 +464,7 @@ Result httpwn_setup(char *serverconfig_localpath)
 
 	u8 *filebuffer;
 	u32 filebuffer_size = 0x100000;
+	u32 statuscode = 0;
 
 	targeturlctx *first_targeturlctx = NULL;
 
@@ -532,10 +535,15 @@ Result httpwn_setup(char *serverconfig_localpath)
 	memset(filebuffer, 0, filebuffer_size);
 
 	printf("Downloading config...\n");
-	ret = download_config("https://yls8.mtheall.com/ctr-httpwn/config.php", cert, certsize, filebuffer, filebuffer_size-1);
+	ret = download_config("https://yls8.mtheall.com/ctr-httpwn/config.php", cert, certsize, filebuffer, filebuffer_size-1, &statuscode);
 	if(ret!=0)
 	{
 		printf("Config downloading failed: 0x%08x.\n", (unsigned int)ret);
+
+		if(statuscode==500)
+		{
+			printf("HTTP status-code 500 was returned, server reply:\n%s\n", (char*)filebuffer);
+		}
 
 		f = fopen(serverconfig_localpath, "rb");
 		if(f)
