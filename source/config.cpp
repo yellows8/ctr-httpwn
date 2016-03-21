@@ -55,7 +55,7 @@ int config_parse_u32field(XMLElement *input_elem, const char *name, u32 *out)
 	return 0;
 }
 
-int config_parse(targeturlctx **first_targeturlctx, char *xml)
+int config_parse(configctx *config, char *xml)
 {
 	int ret=0;
 	int resetflag;
@@ -80,6 +80,29 @@ int config_parse(targeturlctx **first_targeturlctx, char *xml)
 		return -1;
 	}
 
+	xml_tmpelem = doc.RootElement()->FirstChildElement("message");
+	if(xml_tmpelem)
+	{
+		textptr = xml_tmpelem->GetText();
+		if(textptr)
+		{
+			strncpy(config->message, textptr, sizeof(config->message)-1);
+
+			config->message_prompt = 0;
+			xml_tmpelem->QueryIntAttribute("prompt", &config->message_prompt);
+		}
+	}
+
+	xml_tmpelem = doc.RootElement()->FirstChildElement("incompatsysver_message");
+	if(xml_tmpelem)
+	{
+		textptr = xml_tmpelem->GetText();
+		if(textptr)
+		{
+			strncpy(config->incompatsysver_message, textptr, sizeof(config->incompatsysver_message)-1);
+		}
+	}
+
 	xml_targeturl = doc.RootElement()->FirstChildElement("targeturl");
 
 	if(xml_targeturl)
@@ -100,7 +123,7 @@ int config_parse(targeturlctx **first_targeturlctx, char *xml)
 				{
 					if(textptr[0])
 					{
-						tmp_targeturlctx = config_findurltarget_entry(first_targeturlctx, &prev_targeturlctx, (char*)textptr);
+						tmp_targeturlctx = config_findurltarget_entry(config->first_targeturlctx, &prev_targeturlctx, (char*)textptr);
 					}
 				}
 			}
@@ -119,7 +142,7 @@ int config_parse(targeturlctx **first_targeturlctx, char *xml)
 					}
 					else
 					{
-						*first_targeturlctx = cur_targeturlctx->next;
+						*config->first_targeturlctx = cur_targeturlctx->next;
 					}
 
 					config_freemem_reqoverride(&cur_targeturlctx->reqheader);
@@ -140,13 +163,13 @@ int config_parse(targeturlctx **first_targeturlctx, char *xml)
 				}
 				memset(cur_targeturlctx, 0, sizeof(targeturlctx));
 
-				if(*first_targeturlctx == NULL)
+				if(*config->first_targeturlctx == NULL)
 				{
-					*first_targeturlctx = cur_targeturlctx;
+					*config->first_targeturlctx = cur_targeturlctx;
 				}
 				else if(next_targeturlctx==NULL)
 				{
-					tmp_targeturlctx = *first_targeturlctx;
+					tmp_targeturlctx = *config->first_targeturlctx;
 					while(tmp_targeturlctx)
 					{
 						next_targeturlctx = &tmp_targeturlctx->next;
@@ -292,7 +315,7 @@ int config_parse(targeturlctx **first_targeturlctx, char *xml)
 
 	doc.Clear();
 
-	if(ret!=0)config_freemem(first_targeturlctx);
+	if(ret!=0)config_freemem(config);
 
 	return ret;
 }
@@ -315,12 +338,12 @@ void config_freemem_reqoverride(targeturl_requestoverridectx **first_reqoverride
 	}
 }
 
-void config_freemem(targeturlctx **first_targeturlctx)
+void config_freemem(configctx *config)
 {
 	targeturlctx *cur_targeturlctx, *next_targeturlctx;
 
-	cur_targeturlctx = *first_targeturlctx;
-	*first_targeturlctx = NULL;
+	cur_targeturlctx = *config->first_targeturlctx;
+	*config->first_targeturlctx = NULL;
 
 	while(cur_targeturlctx)
 	{

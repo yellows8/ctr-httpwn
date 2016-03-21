@@ -42,6 +42,29 @@ void displaymessage_waitbutton()
 	}
 }
 
+Result display_config_message(configctx *config, const char *str)
+{
+	if(config->message[0])
+	{
+		printf("%s\n%s\n\n", str, config->message);
+
+		if(config->message_prompt)
+		{
+			printf("Press A to continue, B to abort.\n");
+
+			while(1)
+			{
+				gspWaitForVBlank();
+				hidScanInput();
+				if(hidKeysDown() & KEY_A)break;
+				if(hidKeysDown() & KEY_B)return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
 Result _HTTPC_CloseContext(Handle handle, Handle contextHandle, Handle *httpheap_sharedmem_handle, Handle *ropvmem_sharedmem_handle, Handle *httpc_sslc_handle)
 {
 	u32* cmdbuf=getThreadCommandBuffer();
@@ -466,9 +489,13 @@ Result httpwn_setup(char *serverconfig_localpath)
 	u32 filebuffer_size = 0x100000;
 	u32 statuscode = 0;
 
+	configctx config;
 	targeturlctx *first_targeturlctx = NULL;
 
 	FILE *f;
+
+	memset(&config, 0, sizeof(configctx));
+	config.first_targeturlctx = &first_targeturlctx;
 
 	ret = amInit();
 	if(ret!=0)
@@ -487,12 +514,6 @@ Result httpwn_setup(char *serverconfig_localpath)
 	{
 		printf("Failed to get the HTTP sysmodule title-version: 0x%08x.\n", (unsigned int)ret);
 		return ret;
-	}
-
-	if(title_entry.version != 13318)
-	{
-		printf("The installed HTTP sysmodule version(v%u) is not supported. The sysmodule version must be the version from system-version >=9.6.0-X.\n", title_entry.version);
-		return -1;
 	}
 
 	http_codebin_buf = NULL;
@@ -585,7 +606,31 @@ Result httpwn_setup(char *serverconfig_localpath)
 		}
 	}
 
-	ret = config_parse(&first_targeturlctx, (char*)filebuffer);
+	ret = config_parse(&config, (char*)filebuffer);
+
+	if(ret==0)
+	{
+		if(title_entry.version != 13318)
+		{
+			printf("The installed HTTP sysmodule version(v%u) is not supported.", title_entry.version);
+			if(config.incompatsysver_message[0])printf(" %s", config.incompatsysver_message);
+			printf("\n");
+
+			httpcExit();
+			free(http_codebin_buf);
+			free(filebuffer);
+
+			return -1;
+		}
+
+		if(display_config_message(&config, "Message from the server:"))
+		{
+			httpcExit();
+			free(http_codebin_buf);
+			free(filebuffer);
+			return 0;
+		}
+	}
 
 	if(ret==0)
 	{
@@ -598,7 +643,18 @@ Result httpwn_setup(char *serverconfig_localpath)
 			fread(filebuffer, 1, filebuffer_size-1, f);
 			fclose(f);
 
-			ret = config_parse(&first_targeturlctx, (char*)filebuffer);
+			ret = config_parse(&config, (char*)filebuffer);
+
+			if(ret==0)
+			{
+				if(display_config_message(&config, "Message from the user_config:"))
+				{
+					httpcExit();
+					free(http_codebin_buf);
+					free(filebuffer);
+					return 0;
+				}
+			}
 		}
 	}
 
@@ -625,7 +681,7 @@ Result httpwn_setup(char *serverconfig_localpath)
 
 	printf("Preparing the haxx...\n");
 	ret = http_haxx("http://localhost/", cert, certsize, first_targeturlctx);//URL doesn't matter much since this won't actually be requested over the network.
-	config_freemem(&first_targeturlctx);
+	config_freemem(&config);
 	httpcExit();
 	free(http_codebin_buf);
 	free(filebuffer);

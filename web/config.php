@@ -127,6 +127,9 @@ for($i=0; $i<$targets_array_size; $i++)
 ?>
 <?xml version="1.0" encoding="UTF-8"?>
 <config>
+
+	<incompatsysver_message>The sysmodule version must be the one from system-version >=9.6.0-X.</incompatsysver_message>
+
 	<targeturl> <!-- This is the URL used for doing the actual sysupdate check / getting the the list of sysupdate titles. -->
 		<name>NetUpdateSOAP</name>
 		<caps>SendPOSTDataRawTimeout</caps>

@@ -49,9 +49,16 @@ typedef struct _targeturlctx {
 	char new_url[0x100];//Optional, when set the specified URL will overwrite the URL used with CreateContext, NUL-terminator included.
 } targeturlctx;
 
-int config_parse(targeturlctx **first_targeturlctx, char *xml);
+typedef struct {
+	targeturlctx **first_targeturlctx;
+	int message_prompt;
+	char message[256];
+	char incompatsysver_message[256];
+} configctx;
+
+int config_parse(configctx *config, char *xml);
 void config_freemem_reqoverride(targeturl_requestoverridectx **first_reqoverridectx);
-void config_freemem(targeturlctx **first_targeturlctx);
+void config_freemem(configctx *config);
 
 #ifdef __cplusplus
 }
