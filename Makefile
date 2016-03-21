@@ -35,7 +35,7 @@ INCLUDES	:=	include
 VERSION	:=	v1.0
 
 APP_TITLE	:=	ctr-httpwn $(VERSION)
-APP_DESCRIPTION	:=	Exploit HTTP sysmodule.
+APP_DESCRIPTION	:=	Bypass required sysupdates by exploiting a sysmodule.   https://github.com/yellows8/ctr-httpwn
 APP_AUTHOR	:=	yellows8
 
 #---------------------------------------------------------------------------------
