@@ -62,6 +62,8 @@ This can only target httpc main-service-sessions which are open at the time this
 
 The server config xml is parsed first, then the user_config if it exists. See also the SD-data section above. For details on the configuration handling/format, see "configdoc.xml", "web/config.php", and the source code.
 
+If the total size for all of the configuration in memory is too large, ROP size errors will be thrown(since that config has to be stored in sysmodule memory).
+
 # Credits
 * This uses the decompression code from here for ExeFS .code decompression: https://github.com/smealum/ninjhax2.x/blob/master/app_bootloader/source/takeover.c
 * Tinyxml2 is used for config XML parsing, via portlibs.
