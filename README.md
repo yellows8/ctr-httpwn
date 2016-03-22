@@ -52,7 +52,7 @@ See the source code regarding initial exploitation. ctr-httpwn under the sysmodu
 
 This can only target httpc main-service-sessions which are open at the time this app runs. It's unknown if/when a way to target main-service-sessions opened after this app would be implemented, but right now it's not needed in the server config anyway. In other words, *only* the sysmodules using httpc can be targeted currently:
 
-* boss(SpotPass): You could have SpotPass download from your own URLs for any content you want, including the policylist file used internally(https://3dbrew.org/wiki/SpotPass). For content using the BOSS-container using your own URLs with that content is really only useful for returning archived SpotPass content(without other haxx allowing modifying that RSA-signed BOSS-container content).
+* boss(SpotPass): You could have SpotPass use network requests with your own URLs for any content you want, including the policylist file used internally(https://3dbrew.org/wiki/SpotPass). For content using the BOSS-container using your own URLs with that content is really only useful for returning archived SpotPass content(without other haxx allowing modifying that RSA-signed BOSS-container content).
 * friends: This just uses the "/ac" page also targeted by the config returned by the server(for replacing the uploaded version values). This is used for friends-login/online-play, etc.
 * act(NNID): This does all of the NNID-related network requests. The server config replaces all of the version values sent in these NNID requests with the values from the latest sysupdate.
 * ac: Not really useful. This does the connection-test, but there's really nothing else used(this has code for using the nasc server but there's no known way to trigger that).
