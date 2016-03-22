@@ -139,7 +139,7 @@ for($i=0; $i<$targets_array_size; $i++)
 
 	<targeturl>
 		<name>nasc</name>
-		<caps>TARGETURLCAP_AddRequestHeader TARGETURLCAP_AddPostDataAscii</caps>
+		<caps>AddRequestHeader AddPostDataAscii</caps>
 		<url>https://nasc.nintendowifi.net/ac</url>
 
 		<requestoverride type="reqheader">

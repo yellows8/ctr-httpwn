@@ -23,7 +23,7 @@ typedef enum {
 	TARGETURLCAP_AddRequestHeader = 1<<0, //Override the value-data used for certain headers.
 	TARGETURLCAP_AddPostDataAscii = 1<<1, //Override the value-data used for certain form-fields.
 	TARGETURLCAP_SendPOSTDataRawTimeout = 2<<0, //NOP SendPOSTDataRawTimeout.
-} targeturl_caps;//Bitmask of capabilities, 0 = none(vtable-ptr is left at the original one).
+} targeturl_caps;//Bitmask of capabilities, 0 = none.
 
 typedef struct _targeturlctx {
 	u32 next_vaddr;//Address of the next struct in the list in HTTP-sysmodule memory.
