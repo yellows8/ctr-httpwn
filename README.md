@@ -26,6 +26,8 @@ Do not use this from Old3DS-browserhax. Do not use this when the system date is 
 
 Just run the app, then if successful return to hbmenu. For using the system eShop application on <10.0.0-X, you must use HANS-eShop included with the homebrew starter-kit(this should be the one updated on March 20, 2016, or later). For everything else, and for using system-eShop-app on >=v10.0.0-X, you can just return to Home Menu from hbmenu. This can be done by pressing the START button, then use the option for returning to Home Menu without rebooting(you can use HANS if you *really* want to, except for eShop on >=10.4.0-X, returning to Home Menu is not *required*).
 
+Returning to Home Menu from hbmenu without rebooting requires a version of hbmenu which actually supports it, and at least \*hax payload 2.6.
+
 When using HANS-eShop on a *very* old system-version such as 9.6.0-X, eShop-app may display an error the first time. Returning to hbmenu then running HANS-eShop again fixes this issue caused(?) by friends-service. You'll have to repeat this every time you boot into \*hax payloads for using HANS-eShop.
 
 In some rare(?) cases, during eShop startup it may unexpectedly start some sort of NNID-related(?) setup(unknown, NNID was mentioned in the Japanese text on a JPN New3DS at least) even though a NNID has been linked a long while. There's no known way to definitely reproduce this. There doesn't appear to be any other affects(eShop/elsewhere) once fully loaded into eShop however.
@@ -63,6 +65,8 @@ This can only target httpc main-service-sessions which are open at the time this
 The server config xml is parsed first, then the user_config if it exists. See also the SD-data section above. For details on the configuration handling/format, see "configdoc.xml", "web/config.php", and the source code.
 
 If the total size for all of the configuration in memory is too large, ROP size errors will be thrown(since that config has to be stored in sysmodule memory).
+
+This basically only supports overwriting request data, not adding anything currently. This also means you can't add your own TLS certs with this currently(minus the NIM RootCertChains, doing so with the ACT RootCertChain isn't enabled for safety).
 
 # Credits
 * This uses the decompression code from here for ExeFS .code decompression: https://github.com/smealum/ninjhax2.x/blob/master/app_bootloader/source/takeover.c
