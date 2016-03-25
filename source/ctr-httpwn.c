@@ -11,7 +11,7 @@
 
 #include "cmpblock_bin.h"
 
-#include "letsencryptauthorityx1_der.h"
+#include "builtin_rootca_der.h"
 
 extern Handle __httpc_servhandle;
 extern u32 *__httpc_sharedmem_addr;
@@ -482,8 +482,8 @@ Result httpwn_setup(char *serverconfig_localpath)
 	u64 http_sysmodule_titleid = 0x0004013000002902ULL;
 	AM_TitleEntry title_entry;
 
-	u8 *cert = (u8*)letsencryptauthorityx1_der;
-	u32 certsize = letsencryptauthorityx1_der_size;
+	u8 *cert = (u8*)builtin_rootca_der;
+	u32 certsize = builtin_rootca_der_size;
 
 	u8 *filebuffer;
 	u32 filebuffer_size = 0x100000;
