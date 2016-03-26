@@ -4,7 +4,7 @@ This also results in sysupdates being blocked from downloading normally(the syst
 
 This can additionally be used for other things as well via the user_config optionally loaded from SD.
 
-Once run successfully, ctr-httpwn will persist under the sysmodule until the sysmodule is terminated(shutdown/reboot/firm-boot).
+Once run successfully, ctr-httpwn will persist under the sysmodule until the sysmodule is terminated(shutdown/reboot/FIRM-launch). For example, you can't use this on Old3DS for Super Smash Bros / Monster Hunter, due to FIRM-launch.
 
 The inital exploitation method was theorized in late 2015. The initial exploit was implemented on February 12-13, 2016.
 
