@@ -41,6 +41,8 @@ Network-request changes(more than just version values) with network services in 
 
 Currently this is hard-coded for HTTP-sysmodule v13318. This is the latest sysmodule version as of 10.7.0-X, last updated with 9.6.0-X. It's unknown if/when auto-locating for the required sysmodule addresses would be implemented for supporting more versions.
 
+__Using the system eShop application with EUR <v10.4 is broken(the application crashes during startup).__
+
 # SD data
 
 Config data is stored under the same directory as the .3dsx:
