@@ -151,6 +151,11 @@ for($i=0; $i<$targets_array_size; $i++)
 			<name>fpdver</name>
 			<new_value><?=$fpdverbase64?></new_value>
 		</requestoverride>
+		
+		<requestoverride type="postform">
+			<name>gamever</name>
+			<new_value>RkZGRg**</new_value>
+		</requestoverride>
 	</targeturl>
 
 	<targeturl> <!-- NNID -->
