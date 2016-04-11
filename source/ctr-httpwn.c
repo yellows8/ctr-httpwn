@@ -215,7 +215,7 @@ Result setuphax_http_sslc(Handle httpc_sslc_handle, u8 *cert, u32 certsize)
 	//RootCertChain_contexthandle 0x1/0x2 are the first/second NIM-sysmodule RootCertChain. 0x3 is the ACT-sysmodule RootCertChain, which isn't used here.
 	for(RootCertChain_contexthandle=0x1; RootCertChain_contexthandle<0x3; RootCertChain_contexthandle++)
 	{
-		ret = sslcAddTrustedRootCA(RootCertChain_contexthandle, cert, certsize);
+		ret = sslcAddTrustedRootCA(RootCertChain_contexthandle, cert, certsize, NULL);
 		if(R_FAILED(ret))break;
 	}
 
@@ -508,7 +508,7 @@ Result httpwn_setup(char *serverconfig_localpath)
 		return ret;
 	}
 
-	ret = AM_ListTitles(0, 1, &http_sysmodule_titleid, &title_entry);
+	ret = AM_GetTitleInfo(MEDIATYPE_NAND, 1, &http_sysmodule_titleid, &title_entry);
 	amExit();
 	if(ret!=0)
 	{
