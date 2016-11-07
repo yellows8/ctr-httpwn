@@ -439,7 +439,7 @@ Result download_config(char *url, u8 *cert, u32 certsize, u8 *filebuffer, u32 dl
 		return ret;
 	}
 
-	ret = httpcGetResponseStatusCode(&context, &statuscode, 0);
+	ret = httpcGetResponseStatusCode(&context, &statuscode);
 	if(R_FAILED(ret))
 	{
 		printf("httpcGetResponseStatusCode returned 0x%08x.\n", (unsigned int)ret);

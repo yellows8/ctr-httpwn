@@ -125,16 +125,15 @@ Result loadcodebin(u64 programid, FS_MediaType mediatype, u8 **codebin_buf, u32 
 	u32 archive_lowpath_data[0x10>>2];
 	u32 file_lowpath_data[0x14>>2];
 
-	FS_Archive archive;
+	FS_Path archLowPath;
 	FS_Path fileLowPath;
 
 	memset(archive_lowpath_data, 0, sizeof(archive_lowpath_data));
 	memset(file_lowpath_data, 0, sizeof(file_lowpath_data));
 
-	archive.id = 0x2345678a;
-	archive.lowPath.type = PATH_BINARY;
-	archive.lowPath.size = 0x10;
-	archive.lowPath.data = archive_lowpath_data;
+	archLowPath.type = PATH_BINARY;
+	archLowPath.size = 0x10;
+	archLowPath.data = archive_lowpath_data;
 
 	fileLowPath.type = PATH_BINARY;
 	fileLowPath.size = 0x14;
@@ -148,7 +147,7 @@ Result loadcodebin(u64 programid, FS_MediaType mediatype, u8 **codebin_buf, u32 
 	file_lowpath_data[3] = 0x646f632e;
 	file_lowpath_data[4] = 0x65;
 
-	ret = FSUSER_OpenFileDirectly(&filehandle, archive, fileLowPath, FS_OPEN_READ, 0x0);
+	ret = FSUSER_OpenFileDirectly(&filehandle, 0x2345678a, archLowPath, fileLowPath, FS_OPEN_READ, 0x0);
 	if(R_FAILED(ret))return ret;
 
 	ret = FSFILE_GetSize(filehandle, &filesize);
