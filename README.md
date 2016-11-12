@@ -20,6 +20,8 @@ If this starts loading user_config unexpectedly when you didn't write anything t
 
 Hashes for the release builds are available at "web/hashes" and here(https://yls8.mtheall.com/ctr-httpwn/hashes), the github+yls8.mtheall.com "hashes" files *must* match.
 
+NOTE: ctr-httpwn v1.0.1 can't affect/change any network requests for adding eShop funds.
+
 # Usage
 
 Do not use this from Old3DS-browserhax. Do not run this app more than once when ctr-httpwn is already active under the sysmodule.
