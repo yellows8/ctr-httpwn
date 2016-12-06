@@ -24,7 +24,8 @@
 			<setid_onmatch>1</setid_onmatch> <!-- When used, copy this requestoverride ID(from <id>) into this targeturl state, when this requestoverride was completely triggered successfully. -->
 			<name>requestname</name> <!-- Required, the entire input request name string must match this. -->
 			<value>requestvalue</value> <!-- Optional, when used the entire input request value string must match this. --> 
-			<new_value>requestnewvalue</new_value> <!-- Optional, when used the specified string is basically used for the input request value string for the command, via a string-copy. The string-copy will not copy data beyond the length of the original input value string(doing so may cause HTTP-sysmodule to crash in some cases). -->
+			<new_value>requestnewvalue</new_value> <!-- Optional, when used the specified string is basically used for the input request value string for the command, via a memcpy. Normally you shouldn't use value-strings longer than the original since the sysmodule might crash in some cases, however ctr-httpwn won't block that. If you use the 'format' attribute with this, for example '<new_value format="hex">', the tag content can be hex instead of a string. -->
+			<new_descriptorword_value>0xhexval</new_descriptorword_value><!-- Optional, when set to non-zero this overwrites the cmdreply value-buffer descriptor with the specified value. Can only be used with requestoverride type reqheader. -->
 		</requestoverride>
 
 		<!-- Even more requestoverride(s) go here if needed.  -->

@@ -13,9 +13,12 @@ typedef struct _targeturl_requestoverridectx {
 	u32 setid_onmatch;//When non-zero, copy the id value to a field in the targeturlctx when matching request data is found.
 	u32 required_id;//When non-zero, this value must match the field referenced above in the targeturlctx in order for the request data to completely match.
 
+	u32 new_value_copysize;//Size to use with memcpy when copying new_value to the actual value data in memory.
+	u32 new_descriptorword_value;//When non-zero, write this value to the cmdreply buffer descriptor word for the value-buffer.
+
 	char name[0x40];//Must match the entire input name.
 	char value[0x40];//Optional, when set this must match the entire input value.
-	char new_value[0x40];
+	char new_value[0x100];
 } targeturl_requestoverridectx;
 
 typedef enum {

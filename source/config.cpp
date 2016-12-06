@@ -68,7 +68,10 @@ int config_parse(configctx *config, char *xml)
 	XMLElement *xml_targeturl = NULL;
 	XMLElement *xml_reqoverride = NULL;
 	XMLElement *xml_tmpelem;
-	const char *textptr = NULL;
+	const char *textptr = NULL, *textptr2 = NULL;
+
+	u32 pos, len;
+	unsigned int tmpval=0;
 
 	doc.Parse(xml);
 
@@ -294,7 +297,30 @@ int config_parse(configctx *config, char *xml)
 				if(xml_tmpelem)
 				{
 					textptr = xml_tmpelem->GetText();
-					if(textptr)strncpy(cur_reqoverridectx->new_value, textptr, sizeof(cur_reqoverridectx->new_value)-1);
+					if(textptr)
+					{
+						textptr2 = xml_tmpelem->Attribute("format");
+
+						if(textptr2==NULL || strcmp(textptr2, "hex"))
+						{
+							strncpy(cur_reqoverridectx->new_value, textptr, sizeof(cur_reqoverridectx->new_value)-1);
+							len = strlen(cur_reqoverridectx->new_value);
+						}
+						else
+						{
+							len = strlen(textptr);
+							len/=2;
+							if(len>sizeof(cur_reqoverridectx->new_value))len=sizeof(cur_reqoverridectx->new_value);
+							for(pos=0; pos<len; pos++)
+							{
+								tmpval = 0;
+								sscanf(&textptr[pos*2], "%02x", &tmpval);
+								cur_reqoverridectx->new_value[pos] = tmpval;
+							}
+						}
+
+						cur_reqoverridectx->new_value_copysize = len;
+					}
 				}
 
 				ret = config_parse_u32field(xml_reqoverride, "id", &cur_reqoverridectx->id);
@@ -305,6 +331,18 @@ int config_parse(configctx *config, char *xml)
 
 				ret = config_parse_u32field(xml_reqoverride, "required_id", &cur_reqoverridectx->required_id);
 				if(ret!=0)break;
+
+				xml_tmpelem = xml_reqoverride->FirstChildElement("new_descriptorword_value");
+				if(xml_tmpelem)
+				{
+					textptr = xml_tmpelem->GetText();
+					if(textptr)
+					{
+						tmpval = 0;
+						sscanf(textptr, "0x%x", &tmpval);
+						cur_reqoverridectx->new_descriptorword_value = tmpval;
+					}
+				}
 
 				xml_reqoverride = xml_reqoverride->NextSiblingElement("requestoverride");
 			}

