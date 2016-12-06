@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+	<targeturl>
+		<name>bosshaxx</name>
+		<caps>AddRequestHeader</caps>
+		<url>https://nppl.c.app.nintendowifi.net/p01/policylist/</url>
+		<new_url>http://10.0.0.23/boss_policylist</new_url>
+
+		<requestoverride type="reqheader">
+			<name>User-Agent</name>
+			<new_value format="hex">50424f532d382e302f303030303030303030303030303030302d303030303030303030303030303030302f30302e302e302d3030582f30303030302f3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002c0308343434343535353536363636373737375f1912000000000074b80308b8b8030800000000602a1400f073ffff</new_value>
+			<new_descriptorword_value>0xbcc</new_descriptorword_value>
+		</requestoverride>
+	</targeturl>
+</config>
+
