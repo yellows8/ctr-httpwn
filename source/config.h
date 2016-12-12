@@ -16,6 +16,8 @@ typedef struct _targeturl_requestoverridectx {
 	u32 new_value_copysize;//Size to use with memcpy when copying new_value to the actual value data in memory.
 	u32 new_descriptorword_value;//When non-zero, write this value to the cmdreply buffer descriptor word for the value-buffer.
 
+	u32 enable_customcmdhandler;//Setup the custom cmdhandler for the context session. Only for AddRequestHeader.
+
 	char name[0x40];//Must match the entire input name.
 	char value[0x40];//Optional, when set this must match the entire input value.
 	char new_value[0x100];
@@ -25,7 +27,7 @@ typedef enum {
 	TARGETURLCAP_NONE = 0,
 	TARGETURLCAP_AddRequestHeader = 1<<0, //Override the value-data used for certain headers.
 	TARGETURLCAP_AddPostDataAscii = 1<<1, //Override the value-data used for certain form-fields.
-	TARGETURLCAP_SendPOSTDataRawTimeout = 2<<0, //NOP SendPOSTDataRawTimeout.
+	TARGETURLCAP_SendPOSTDataRawTimeout = 1<<2, //NOP SendPOSTDataRawTimeout.
 } targeturl_caps;//Bitmask of capabilities, 0 = none.
 
 typedef struct _targeturlctx {

@@ -344,6 +344,9 @@ int config_parse(configctx *config, char *xml)
 					}
 				}
 
+				ret = config_parse_u32field(xml_reqoverride, "enable_customcmdhandler", &cur_reqoverridectx->enable_customcmdhandler);
+				if(ret!=0)break;
+
 				xml_reqoverride = xml_reqoverride->NextSiblingElement("requestoverride");
 			}
 
