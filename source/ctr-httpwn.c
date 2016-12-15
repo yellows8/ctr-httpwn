@@ -364,10 +364,11 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 		return ret;
 	}
 
-	printf("Testing httpc with non-targeted URLs...\n");
+	printf("Testing httpc...\n");
 
-	for(i=0; i<2; i++)
+	for(i=0; i<3; i++)
 	{
+		if(i==2)requrl = "http://localhost/ctr-httpwn/cmdhandler";
 		ret = httpcOpenContext(&context, HTTPC_METHOD_POST, requrl, 1);
 		if(R_FAILED(ret))
 		{
@@ -384,7 +385,7 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 		}
 
 		ret = httpcAddPostDataAscii(&context, "form_name", "form_value");
-		if(R_FAILED(ret))
+		if((i!=2 && R_FAILED(ret)) || (i==2 && ret!=0xd8e007f7))
 		{
 			printf("httpcAddPostDataAscii returned 0x%08x, i=%u.\n", (unsigned int)ret, (unsigned int)i);
 			httpcCloseContext(&context);
