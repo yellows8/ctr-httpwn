@@ -115,14 +115,17 @@ Result _HTTPC_CustomCmd(Handle handle, u32 type, u32 handleindex, Handle in_hand
 	cmdbuf[2]=handleindex;
 	cmdbuf[3]=IPC_Desc_SharedHandles(1);
 	cmdbuf[4]=in_handle;
-	
+
 	Result ret=0;
 	if(R_FAILED(ret=svcSendSyncRequest(handle)))return ret;
 	ret = cmdbuf[1];
 
 	if(ret==0)
 	{
-		if(type==1 && out_handle)*out_handle = cmdbuf[3];
+		if(type==1 && out_handle)
+		{
+			*out_handle = cmdbuf[3];
+		}
 	}
 
 	return cmdbuf[1];
@@ -261,8 +264,9 @@ Result setuphax_http_sslc(Handle httpc_sslc_handle, u8 *cert, u32 certsize)
 
 Result test_customcmdhandler(httpcContext *context)
 {
-	Result ret=0;
+	Result ret=0, ret2=0;
 	psRSAContext rsactx;
+	Handle tmphandle=0;
 	u8 signature[0x100];
 	u8 cmphash[0x20];
 
@@ -271,9 +275,21 @@ Result test_customcmdhandler(httpcContext *context)
 	memset(cmphash, 0, sizeof(cmphash));
 	rsactx.rsa_bitsize = 0x100<<3;
 
-	_httpcCustomCmd(context, ~0, 0, 0, NULL);//Run the customcmd handler with an invalid type-value so that the static-buffer is setup, for use with PS_VerifyRsaSha256.
+	ret = _httpcCustomCmd(context, ~0, 0, 0, NULL);//Run the customcmd handler with an invalid type-value so that the static-buffer is setup, for use with PS_VerifyRsaSha256.
+	if(ret!=0)
+	{
+		printf("The initial _httpcCustomCmd() returned 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
 
-	ret = psInitHandle(context->servhandle);
+	ret = svcDuplicateHandle(&tmphandle, context->servhandle);//The context servhandle needs duplicated before using with psInitHandle, since psExit will close it.
+	if(R_FAILED(ret))
+	{
+		printf("svcDuplicateHandle failed: 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
+
+	ret = psInitHandle(tmphandle);
 	if(R_FAILED(ret))
 	{
 		printf("psInitHandle failed: 0x%08x.\n", (unsigned int)ret);
@@ -296,13 +312,66 @@ Result test_customcmdhandler(httpcContext *context)
 		printf("Testing with the actual ps:ps service...\n");
 
 		ret = PS_VerifyRsaSha256(cmphash, &rsactx, signature);
-		printf("PS_VerifyRsaSha256 returned 0x%08x.\n", (unsigned int)ret);
+		printf("Normal PS_VerifyRsaSha256 returned 0x%08x.\n", (unsigned int)ret);
+		ret = 0;
 
-		//ret = _httpcCustomCmd(context, u32 type, u32 handleindex, Handle in_handle, Handle *out_handle);
+		ret = _httpcCustomCmd(context, 0, 0, psGetSessionHandle(), NULL);
+		if(R_FAILED(ret))
+		{
+			printf("Failed to send the ps:ps handle: 0x%08x.\n", (unsigned int)ret);
+		}
+
+		if(ret==0)
+		{
+			tmphandle = 0;
+			ret = _httpcCustomCmd(context, 1, 0, 0, &tmphandle);
+			if(R_FAILED(ret))
+			{
+				printf("Failed to get the handle: 0x%08x.\n", (unsigned int)ret);
+			}
+			else
+			{
+				//if(tmphandle==0)
+				{
+					printf("Output handle: 0x%08x.\n", (unsigned int)tmphandle);
+					//ret = -2;
+				}
+			}
+
+			if(ret==0)
+			{
+				psExit();
+
+				tmphandle=0;
+				ret = svcDuplicateHandle(&tmphandle, context->servhandle);//The context servhandle needs duplicated before using with psInitHandle, since psExit will close it.
+				if(R_FAILED(ret))
+				{
+					printf("svcDuplicateHandle failed: 0x%08x.\n", (unsigned int)ret);
+				}
+				else
+				{
+					ret = psInitHandle(tmphandle);
+					if(R_FAILED(ret))
+					{
+						printf("psInitHandle failed: 0x%08x.\n", (unsigned int)ret);
+					}
+					else
+					{
+						ret = PS_VerifyRsaSha256(cmphash, &rsactx, signature);
+						printf("Custom+normal PS_VerifyRsaSha256 returned 0x%08x.\n", (unsigned int)ret);
+					}
+				}
+			}
+
+			ret2 = _httpcCustomCmd(context, 2, 0, 0, NULL);
+			if(R_FAILED(ret2))
+			{
+				printf("Failed to close the stored handle: 0x%08x.\n", (unsigned int)ret2);
+				if(ret==0)ret = ret2;
+			}
+		}
 
 		psExit();
-
-		ret = 0;
 	}
 	else//Ignore init failure since ps:ps normally isn't accessible.
 	{
