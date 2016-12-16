@@ -267,6 +267,7 @@ Result test_customcmdhandler(httpcContext *context)
 	Result ret=0, ret2=0;
 	psRSAContext rsactx;
 	Handle tmphandle=0;
+	u32 tmpval;
 	u8 signature[0x100];
 	u8 cmphash[0x20];
 
@@ -331,10 +332,10 @@ Result test_customcmdhandler(httpcContext *context)
 			}
 			else
 			{
-				//if(tmphandle==0)
+				if(tmphandle==0)
 				{
-					printf("Output handle: 0x%08x.\n", (unsigned int)tmphandle);
-					//ret = -2;
+					printf("Invalid output handle: 0x%08x.\n", (unsigned int)tmphandle);
+					ret = -2;
 				}
 			}
 
@@ -359,6 +360,14 @@ Result test_customcmdhandler(httpcContext *context)
 					{
 						ret = PS_VerifyRsaSha256(cmphash, &rsactx, signature);
 						printf("Custom+normal PS_VerifyRsaSha256 returned 0x%08x.\n", (unsigned int)ret);
+					}
+
+					if(ret==0)
+					{
+						tmpval = 0;
+						ret = PS_GetDeviceId(&tmpval);
+						printf("PS_GetDeviceId returned 0x%08x, out=0x%08x.\n", (unsigned int)ret, (unsigned int)tmpval);
+						if(ret==0 && tmpval==0)ret = -3;
 					}
 				}
 			}

