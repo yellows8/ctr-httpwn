@@ -270,11 +270,16 @@ Result test_customcmdhandler(httpcContext *context)
 	u32 tmpval;
 	u8 signature[0x100];
 	u8 cmphash[0x20];
+	u32 cryptblock[0x10>>2];
+	u8 iv[0x10];
 
 	memset(&rsactx, 0, sizeof(rsactx));
 	memset(signature, 0, sizeof(signature));
 	memset(cmphash, 0, sizeof(cmphash));
 	rsactx.rsa_bitsize = 0x100<<3;
+
+	memset(cryptblock, 0, sizeof(cryptblock));
+	memset(iv, 0, sizeof(iv));
 
 	ret = _httpcCustomCmd(context, ~0, 0, 0, NULL);//Run the customcmd handler with an invalid type-value so that the static-buffer is setup, for use with PS_VerifyRsaSha256.
 	if(ret!=0)
@@ -365,8 +370,15 @@ Result test_customcmdhandler(httpcContext *context)
 					if(ret==0)
 					{
 						tmpval = 0;
-						ret = PS_GetDeviceId(&tmpval);
+						ret = PS_GetDeviceId(&tmpval);//Verify that using a PS command via the custom-cmdhandler without special handling works fine.
 						printf("PS_GetDeviceId returned 0x%08x, out=0x%08x.\n", (unsigned int)ret, (unsigned int)tmpval);
+						if(ret==0 && tmpval==0)ret = -3;
+					}
+
+					if(ret==0)//Verify that PS_EncryptDecryptAes works fine since the custom-cmdhandler has additional handling for it.
+					{
+						ret = PS_EncryptDecryptAes(sizeof(cryptblock), (u8*)cryptblock, (u8*)cryptblock, PS_ALGORITHM_CTR_ENC, PS_KEYSLOT_0D, iv);
+						printf("PS_EncryptDecryptAes returned 0x%08x, out=0x%08x.\n", (unsigned int)ret, (unsigned int)cryptblock[0]);
 						if(ret==0 && tmpval==0)ret = -3;
 					}
 				}
