@@ -269,13 +269,13 @@ Result test_customcmdhandler(httpcContext *context)
 	Handle tmphandle=0;
 	u32 tmpval;
 	u8 signature[0x100];
-	u8 cmphash[0x20];
+	u8 hash[0x20];
 	u32 cryptblock[0x10>>2];
 	u8 iv[0x10];
 
 	memset(&rsactx, 0, sizeof(rsactx));
 	memset(signature, 0, sizeof(signature));
-	memset(cmphash, 0, sizeof(cmphash));
+	memset(hash, 0, sizeof(hash));
 	rsactx.rsa_bitsize = 0x100<<3;
 
 	memset(cryptblock, 0, sizeof(cryptblock));
@@ -302,7 +302,7 @@ Result test_customcmdhandler(httpcContext *context)
 		return ret;
 	}
 
-	ret = PS_VerifyRsaSha256(cmphash, &rsactx, signature);
+	ret = PS_VerifyRsaSha256(hash, &rsactx, signature);
 	if(ret!=0)
 	{
 		printf("Custom PS_VerifyRsaSha256 failed: 0x%08x.\n", (unsigned int)ret);
@@ -317,7 +317,7 @@ Result test_customcmdhandler(httpcContext *context)
 	{
 		printf("Testing with the actual ps:ps service...\n");
 
-		ret = PS_VerifyRsaSha256(cmphash, &rsactx, signature);
+		ret = PS_VerifyRsaSha256(hash, &rsactx, signature);
 		printf("Normal PS_VerifyRsaSha256 returned 0x%08x.\n", (unsigned int)ret);
 		ret = 0;
 
@@ -363,7 +363,7 @@ Result test_customcmdhandler(httpcContext *context)
 					}
 					else
 					{
-						ret = PS_VerifyRsaSha256(cmphash, &rsactx, signature);
+						ret = PS_VerifyRsaSha256(hash, &rsactx, signature);
 						printf("Custom+normal PS_VerifyRsaSha256 returned 0x%08x.\n", (unsigned int)ret);
 					}
 
