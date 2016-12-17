@@ -76,4 +76,5 @@ This basically only supports overwriting request data, not adding anything curre
 * This uses the decompression code from here for ExeFS .code decompression: https://github.com/smealum/ninjhax2.x/blob/master/app_bootloader/source/takeover.c
 * Tinyxml2 is used for config XML parsing, via portlibs.
 * @ihaveamac for the app icon(issue #1).
+* types.h at ipctakeover/boss/ is from ctrtool.
 
