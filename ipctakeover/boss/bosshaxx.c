@@ -64,6 +64,7 @@ u32 ROP_svcCloseHandle = 0x0012790c;//svc 0x23 bx-lr
 u32 ROP_get_tls = 0x00127a24;//r0 = tls+0 then bx-lr.
 
 u32 BOSS_psps_sessionhandle = 0x0014b204;
+u32 BOSS_fsuser_sessionhandle = 0x0014b198+16;
 
 u32 contentdatabuf_addr = 0x08032c00;//Unused memory near the end of the heap.
 
@@ -352,6 +353,7 @@ void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_AddRequestHeader, params);//Once this finishes, the ctr-httpwn custom-cmdhandler will be available via the context session handle.
 
 	ropgen_httpc_customcmd(&ropchain, ropvaddr, httpctx, 0, 0, BOSS_psps_sessionhandle);//Send the sysmodule psps handle to the httpc custom-cmdhandler.
+	ropgen_httpc_customcmd(&ropchain, ropvaddr, httpctx, 0, 1, BOSS_fsuser_sessionhandle);//Send the sysmodule fsuser handle to the httpc custom-cmdhandler.
 
 	//Copy the sysmodule psps handle to ropheap+0x20, then overwrite the sysmodule psps handle with the custom-cmdhandler session handle. Then close the original handle since it's not used under BOSS sysmodule at this point.
 	ropgen_copyu32(&ropchain, ropvaddr, BOSS_psps_sessionhandle, ropheap+0x20, 0x3);
