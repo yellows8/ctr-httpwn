@@ -308,7 +308,7 @@ void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 	params[0] = httpctx;//r0 = _this
 	params[1] = datastorageaddr+0x28;//r1 = namestr*
 	params[2] = datastorageaddr+0x34;//r2 = valuestr*
-	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_AddRequestHeader, params);
+	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_AddRequestHeader, params);//Once this finishes, the ctr-httpwn custom-cmdhandler will be available via the context session handle.
 
 	memset(params, 0, sizeof(params));
 	params[0] = httpctx;//r0 = _this
