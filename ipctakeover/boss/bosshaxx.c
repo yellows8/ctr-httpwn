@@ -68,7 +68,7 @@ u32 ROP_get_tls = 0x00127a24;//r0 = tls+0 then bx-lr.
 u32 BOSS_psps_sessionhandle = 0x0014b204;
 u32 BOSS_fsuser_sessionhandle = 0x0014b198+16;
 
-u32 BOSS_httptargetfunc_ropretaddr = 0x0010c11f;
+u32 BOSS_httptargetfunc_ropretaddr = 0x0010c0d3;
 u32 BOSS_httptargetfunc_useragent_stackaddr = 0x0803b7f8-0xa4;
 
 u32 contentdatabuf_addr = 0x08032c00;//Unused memory near the end of the heap.
