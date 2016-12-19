@@ -36,6 +36,9 @@ typedef struct _targeturlctx {
 
 	targeturl_caps caps;
 
+	u32 maxrun_set;//When enabled, maxrun is the maximum number of times this targeturlctx can be used with each HTTPC:CreateContext call before it's ignored.
+	u32 maxrun;
+
 	u32 lastmatch_id;//Set to zero when the CreateContext ROP-chain runs with this ctx. This is the targeturlctx field mentioned in requestoverridectx.
 
 	u32 vtableptr;

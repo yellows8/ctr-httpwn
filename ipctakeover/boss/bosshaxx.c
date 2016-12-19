@@ -16,6 +16,8 @@ char configxml_formatstr[] = {
 		<caps>AddRequestHeader</caps>\n\
 		<url>%s</url>\n\
 		<new_url>%s</new_url>\n\
+		<maxrun_set>1</maxrun_set>\n\
+		<maxrun>1</maxrun>\n\
 \n\
 		<requestoverride type=\"reqheader\">\n\
 			<name>User-Agent</name>\n\

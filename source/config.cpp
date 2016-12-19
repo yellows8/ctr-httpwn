@@ -225,6 +225,12 @@ int config_parse(configctx *config, char *xml)
 				if(textptr)strncpy(cur_targeturlctx->new_url, textptr, sizeof(cur_targeturlctx->new_url)-1);
 			}
 
+			ret = config_parse_u32field(xml_targeturl, "maxrun_set", &cur_targeturlctx->maxrun_set);
+			if(ret!=0)break;
+
+			ret = config_parse_u32field(xml_targeturl, "maxrun", &cur_targeturlctx->maxrun);
+			if(ret!=0)break;
+
 			next_reqoverridectx_reqheader = &cur_targeturlctx->reqheader;
 			next_reqoverridectx_postform = &cur_targeturlctx->postform;
 

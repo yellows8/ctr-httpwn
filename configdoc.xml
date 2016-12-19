@@ -16,6 +16,9 @@
 		<url>targeturl</url> <!-- URL to target. If not set, this targeturl entry will trigger on *all* URLs handled by the CreateContext hook, if no targeturl triggers before this. The input CreateContext URL is compared with this, without the nul-terminator from the former. Hence, this targeturl will trigger on all URLs that start with this url(used with the server config for NNID). -->
 		<new_url>overwriteurl</new_url> <!-- Optional URL which replaces the URL passed to CreateContext. This shouldn't be longer than the original input URL for CreateContext, otherwise in some cases HTTP-sysmodule might crash due to trying to access unmapped memory. -->
 
+		<maxrun_set>1</maxrun_set> <!-- Optional, enables using maxrun. -->
+		<maxrun>1</maxrun> <!-- Optional, counter which is decreased by 1 each time this targeturl triggers. Once zero this targeturl will not be used anymore. Hence, this is the maximum number of times this targeturl can be used. The value here should be non-zero since otherwise this targeturl will never trigger. -->
+
 		<!-- The requestoverride(s) enabled by caps start here, if any. These are processed by the ROP in the same order used by the config here. -->
 
 		<requestoverride type="VAL"> <!-- Valid values for VAL are(without quotes): "reqheader"(AddRequestHeader) and "postform"(AddPostDataAscii). -->
