@@ -506,6 +506,9 @@ Result test_boss()
 {
 	Result ret=0;
 	char *taskID = "task";
+	u8 tmp0, tmp1;
+	u32 tmp2;
+	u32 pos;
 
 	printf("Testing BOSS...\n");
 
@@ -528,6 +531,31 @@ Result test_boss()
 			{
 				ret = bossStartTaskImmediate(taskID);
 				printf("bossStartTaskImmediate returned 0x%08x.\n", (unsigned int)ret);
+			}
+
+			for(pos=0; pos<2; pos++)
+			{
+				if(R_SUCCEEDED(ret))
+				{
+					ret = bossGetTaskState(taskID, 0, &tmp0, &tmp2, &tmp1);
+					printf("bossGetTaskState inval=0 returned 0x%08x.\n", (unsigned int)ret);
+					if(R_SUCCEEDED(ret))printf("tmp0=0x%x, tmp2=0x%x, tmp1=0x%x.\n", (unsigned int)tmp0, (unsigned int)tmp2, (unsigned int)tmp1);
+
+					
+					ret = bossGetTaskState(taskID, 1, &tmp0, &tmp2, &tmp1);
+					printf("bossGetTaskState inval=1 returned 0x%08x.\n", (unsigned int)ret);
+					if(R_SUCCEEDED(ret))printf("tmp0=0x%x, tmp2=0x%x, tmp1=0x%x.\n", (unsigned int)tmp0, (unsigned int)tmp2, (unsigned int)tmp1);
+
+					ret = bossCmd34(taskID, &tmp0);
+					printf("bossCmd34 returned 0x%08x.\n", (unsigned int)ret);
+					if(R_SUCCEEDED(ret))printf("tmp0=0x%x.\n", (unsigned int)tmp0);
+
+					if(pos==0)
+					{
+						printf("Delaying 30s...\n");
+						svcSleepThread(30000000000LL);
+					}
+				}
 			}
 		}
 
