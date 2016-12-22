@@ -425,7 +425,7 @@ Result setup_boss(u32 seconds_interval, char *url)
 	ret = bossSendProperty(0x3, tmpdata, 4);
 	if(R_FAILED(ret))return ret;
 
-	tmpdata[0] = 0x64;
+	tmpdata[0] = 2;//0x64;
 	ret = bossSendProperty(0x4, tmpdata, 4);
 	if(R_FAILED(ret))return ret;
 
@@ -533,6 +533,8 @@ Result test_boss()
 				printf("bossStartTaskImmediate returned 0x%08x.\n", (unsigned int)ret);
 			}
 
+			//Info_00 bossGetTaskState: 0x0, 0x64, 0x5
+
 			for(pos=0; pos<2; pos++)
 			{
 				if(R_SUCCEEDED(ret))
@@ -541,13 +543,8 @@ Result test_boss()
 					printf("bossGetTaskState inval=0 returned 0x%08x.\n", (unsigned int)ret);
 					if(R_SUCCEEDED(ret))printf("tmp0=0x%x, tmp2=0x%x, tmp1=0x%x.\n", (unsigned int)tmp0, (unsigned int)tmp2, (unsigned int)tmp1);
 
-					
-					ret = bossGetTaskState(taskID, 1, &tmp0, &tmp2, &tmp1);
-					printf("bossGetTaskState inval=1 returned 0x%08x.\n", (unsigned int)ret);
-					if(R_SUCCEEDED(ret))printf("tmp0=0x%x, tmp2=0x%x, tmp1=0x%x.\n", (unsigned int)tmp0, (unsigned int)tmp2, (unsigned int)tmp1);
-
-					ret = bossCmd34(taskID, &tmp0);
-					printf("bossCmd34 returned 0x%08x.\n", (unsigned int)ret);
+					ret = bossGetTaskProperty0(taskID, &tmp0);
+					printf("bossGetTaskProperty0 returned 0x%08x.\n", (unsigned int)ret);
 					if(R_SUCCEEDED(ret))printf("tmp0=0x%x.\n", (unsigned int)tmp0);
 
 					if(pos==0)
