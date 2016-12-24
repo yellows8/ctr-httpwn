@@ -402,106 +402,6 @@ Result test_customcmdhandler(httpcContext *context)
 	return ret;
 }
 
-Result setup_boss(u32 seconds_interval, char *url)
-{
-	Result ret=0;
-	u32 tmpdata[0x360>>2];
-
-	memset(tmpdata, 0, sizeof(tmpdata));
-
-	tmpdata[0] = 0xaa;
-	ret = bossSendProperty(0x0, tmpdata, 1);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x01;
-	ret = bossSendProperty(0x1, tmpdata, 1);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0;
-	ret = bossSendProperty(0x2, tmpdata, 4);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = seconds_interval;
-	ret = bossSendProperty(0x3, tmpdata, 4);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 2;//0x64;
-	ret = bossSendProperty(0x4, tmpdata, 4);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x02;
-	ret = bossSendProperty(0x5, tmpdata, 4);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x02;
-	ret = bossSendProperty(0x6, tmpdata, 4);
-	if(R_FAILED(ret))return ret;
-
-	memset(tmpdata, 0, sizeof(tmpdata));
-	strncpy((char*)tmpdata, url, 0x200-1);
-	ret = bossSendProperty(0x7, tmpdata, 0x200);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x00;
-	ret = bossSendProperty(0x9, tmpdata, 1);
-	if(R_FAILED(ret))return ret;
-
-	memset(tmpdata, 0, sizeof(tmpdata));
-	ret = bossSendProperty(0xa, tmpdata, 0x100);
-	if(R_FAILED(ret))return ret;
-
-	memset(tmpdata, 0, sizeof(tmpdata));
-	ret = bossSendProperty(0xd, tmpdata, 0x360);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x00;
-	ret = bossSendProperty(0x16, tmpdata, 4);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x00;
-	ret = bossSendProperty(0x8, tmpdata, 4);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x00;
-	ret = bossSendProperty(0xe, tmpdata, 4);
-	if(R_FAILED(ret))return ret;
-
-	memset(tmpdata, 0, sizeof(tmpdata));
-	tmpdata[0] = 0x07;
-	tmpdata[1] = 0x03;
-	ret = bossSendProperty(0xf, tmpdata, 0xc);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x00;
-	ret = bossSendProperty(0x3b, tmpdata, 0x4);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x00;
-	ret = bossSendProperty(0x12, tmpdata, 0x1);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x00;
-	ret = bossSendProperty(0x10, tmpdata, 0x1);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x00;
-	ret = bossSendProperty(0x11, tmpdata, 0x1);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x02;
-	ret = bossSendProperty(0x13, tmpdata, 0x4);
-	if(R_FAILED(ret))return ret;
-
-	tmpdata[0] = 0x01;
-	ret = bossSendProperty(0x14, tmpdata, 0x4);
-	if(R_FAILED(ret))return ret;
-
-	memset(tmpdata, 0, sizeof(tmpdata));
-	ret = bossSendProperty(0x15, tmpdata, 0x40);
-
-	return ret;
-}
-
 Result test_boss()
 {
 	Result ret=0;
@@ -509,6 +409,8 @@ Result test_boss()
 	u8 tmp0, tmp1;
 	u32 tmp2;
 	u32 pos;
+
+	bossContext ctx;
 
 	printf("Testing BOSS...\n");
 
@@ -519,8 +421,10 @@ Result test_boss()
 		ret = bossDeleteTask(taskID, 0);
 		printf("bossDeleteTask returned 0x%08x.\n", (unsigned int)ret);
 
-		ret = setup_boss(60, "http://10.0.0.23/bossdata");
-		printf("setup_boss returned 0x%08x.\n", (unsigned int)ret);
+		bossSetupContextDefault(&ctx, 60, "https://192.168.254.11/bossdata");
+
+		ret = bossSendContextConfig(&ctx);
+		printf("bossSendContextConfig returned 0x%08x.\n", (unsigned int)ret);
 
 		if(ret==0)
 		{
@@ -532,8 +436,6 @@ Result test_boss()
 				ret = bossStartTaskImmediate(taskID);
 				printf("bossStartTaskImmediate returned 0x%08x.\n", (unsigned int)ret);
 			}
-
-			//Info_00 bossGetTaskState: 0x0, 0x64, 0x5
 
 			for(pos=0; pos<2; pos++)
 			{
@@ -577,6 +479,8 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 	Handle ropvmem_sharedmem_handle=0;
 	Handle httpc_sslc_handle = 0;
 	u32 i;
+
+	//return test_boss();
 
 	ret = httpcOpenContext(&context, HTTPC_METHOD_POST, requrl, 1);
 	if(ret!=0)return ret;
@@ -759,7 +663,7 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 
 	if(R_SUCCEEDED(ret))ret = test_boss();
 
-	return 0;
+	return ret;
 }
 
 Result download_config(char *url, u8 *cert, u32 certsize, u8 *filebuffer, u32 dlsize, u32 *out_statuscode)
