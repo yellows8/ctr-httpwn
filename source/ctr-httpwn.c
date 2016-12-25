@@ -13,6 +13,16 @@
 
 #include "builtin_rootca_der.h"
 
+char regionids_table[7][4] = {//https://3dbrew.org/wiki/Nandrw/sys/SecureInfo_A
+"JPN",
+"USA",
+"EUR",
+"JPN", //"AUS"
+"CHN",
+"KOR",
+"TWN"
+};
+
 extern Handle __httpc_servhandle;
 extern u32 *__httpc_sharedmem_addr;
 
@@ -411,12 +421,36 @@ Result test_boss()
 	u32 NsDataId = 0x58584148;
 	u8 tmpbuf[5] = {0};
 
+	u8 region=0;
+
 	bossContext ctx;
+
+	char url[256];
 
 	//This tests BOSS(SpotPass) to verify that unsigned boss-container content can be used. This is also for running bosshaxx via the ctr-httpwn config for it. Even if bosshaxx wouldn't run at all, this would still work fine if sigchecks are already patched with the running system(like "cfw").
 	//TODO: Only run this with BOSS-sysmodule version(s) compatible with bosshaxx.
 
 	printf("Testing BOSS...\n");
+
+	ret = cfguInit();
+	if(ret!=0)
+	{
+		printf("Failed to init cfg: 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
+	ret = CFGU_SecureInfoGetRegion(&region);
+	if(ret!=0)
+	{
+		printf("Failed to get region from cfg: 0x%08x.\n", (unsigned int)ret);
+		return ret;
+	}
+	if(region>=7)
+	{
+		printf("Region value from cfg is invalid: 0x%02x.\n", (unsigned int)region);
+		ret = -9;
+		return ret;
+	}
+	cfguExit();
 
 	ret = bossInit(0);
 
@@ -432,7 +466,20 @@ Result test_boss()
 
 		printf("Registering/starting the BOSS task...\n");
 
-		bossSetupContextDefault(&ctx, 60, "https://192.168.254.11/bossdata");
+		memset(url, 0, sizeof(url));
+		snprintf(url, sizeof(url)-1, "https://192.168.254.11/ctr-httpwn/boss/bossdata_%s", regionids_table[region]);
+
+		bossSetupContextDefault(&ctx, 60, url);
+
+		ctx.property_x11 = 1;
+
+		memset(ctx.property_xa, 0x40, sizeof(ctx.property_xa)-1);
+
+		memset(ctx.property_xb, 0x41, sizeof(ctx.property_xb)-1);
+
+		memset(ctx.property_x15, 0x42, sizeof(ctx.property_x15)-1);
+
+		memset(ctx.property_x3e, 0x43, sizeof(ctx.property_x3e)-1);
 
 		ret = bossSendContextConfig(&ctx);
 		if(R_FAILED(ret))printf("bossSendContextConfig returned 0x%08x.\n", (unsigned int)ret);
