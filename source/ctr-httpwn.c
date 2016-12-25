@@ -871,6 +871,37 @@ Result httpwn_setup(char *serverconfig_localpath)
 	}
 	memset(filebuffer, 0, filebuffer_size);
 
+	f = fopen("romfs:/internal_config.xml", "rb");
+	if(f)
+	{
+		printf("Loading+parsing internal_config.xml...\n");
+
+		memset(filebuffer, 0, filebuffer_size);
+		fread(filebuffer, 1, filebuffer_size-1, f);
+		fclose(f);
+
+		ret = config_parse(&config, (char*)filebuffer);
+
+		if(ret==0)
+		{
+			if(display_config_message(&config, "Message from the internal_config:"))
+			{
+				httpcExit();
+				free(http_codebin_buf);
+				free(filebuffer);
+				return 0;
+			}
+		}
+	}
+	else
+	{
+		printf("Failed to open the internal_config.");
+		httpcExit();
+		free(http_codebin_buf);
+		free(filebuffer);
+		return -10;
+	}
+
 	printf("Downloading config...\n");
 	ret = download_config("https://yls8.mtheall.com/ctr-httpwn/config.php?appver="VERSION, cert, certsize, filebuffer, filebuffer_size-1, &statuscode);
 	if(ret!=0)
@@ -1049,7 +1080,12 @@ int main(int argc, char **argv)
 
 	if(!abort)
 	{
-		ret = httpwn_setup(serverconfig_localpath);
+		ret = romfsInit();
+		if(R_FAILED(ret))printf("romfsInit() failed: 0x%08x.\n", (unsigned int)ret);
+
+		if(R_SUCCEEDED(ret))ret = httpwn_setup(serverconfig_localpath);
+
+		romfsExit();
 
 		if(ret==0)printf("Done.\n");
 	}

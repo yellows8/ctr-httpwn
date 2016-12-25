@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+	<targeturl>
+		<name>cmdhandler</name>
+		<caps>AddRequestHeader</caps>
+		<url>http://localhost/ctr-httpwn/cmdhandler</url>
+
+		<requestoverride type="reqheader">
+			<name>User-Agent</name>
+
+			<enable_customcmdhandler>1</enable_customcmdhandler>
+		</requestoverride>
+	</targeturl>
+</config>
+
