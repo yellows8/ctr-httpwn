@@ -408,6 +408,8 @@ Result test_boss()
 	char *taskID = "task";
 	u8 tmp0, tmp1;
 	u32 tmp2;
+	u32 NsDataId = 0x58584148;
+	u8 tmpbuf[5] = {0};
 
 	bossContext ctx;
 
@@ -419,6 +421,9 @@ Result test_boss()
 	{
 		ret = bossDeleteTask(taskID, 0);
 		printf("bossDeleteTask returned 0x%08x.\n", (unsigned int)ret);
+
+		ret = bossDeleteNsData(NsDataId);
+		printf("bossDeleteNsData returned 0x%08x.\n", (unsigned int)ret);
 
 		bossSetupContextDefault(&ctx, 60, "https://192.168.254.11/bossdata");
 
@@ -464,6 +469,31 @@ Result test_boss()
 				printf("BOSS task failed.\n");
 				ret = -9;
 			}
+
+			if(R_SUCCEEDED(ret))
+			{
+				tmp2 = 0;
+				ret = bossReadNsData(NsDataId, 0, tmpbuf, sizeof(tmpbuf), &tmp2, NULL);
+				printf("bossReadNsData returned 0x%08x, transfer_total=0x%x.\n", (unsigned int)ret, (unsigned int)tmp2);
+
+				if(R_SUCCEEDED(ret) && tmp2!=sizeof(tmpbuf))ret = -10;
+			}
+
+			if(R_SUCCEEDED(ret))
+			{
+				if(strncmp((char*)tmpbuf, "Hello", 5))
+				{
+					printf("Invalid BOSS content data.\n");
+					ret = -11;
+				}
+			}
+
+			if(R_SUCCEEDED(ret))
+			{
+
+				ret = bossDeleteNsData(NsDataId);
+				printf("bossDeleteNsData returned 0x%08x.\n", (unsigned int)ret);
+			}
 		}
 
 		bossExit();
@@ -472,8 +502,6 @@ Result test_boss()
 	{
 		printf("bossInit returned 0x%08x.\n", (unsigned int)ret);
 	}
-
-	ret = 0;
 
 	return ret;
 }
