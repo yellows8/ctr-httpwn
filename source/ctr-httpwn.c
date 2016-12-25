@@ -413,38 +413,45 @@ Result test_boss()
 
 	bossContext ctx;
 
+	//This tests BOSS(SpotPass) to verify that unsigned boss-container content can be used. This is also for running bosshaxx via the ctr-httpwn config for it. Even if bosshaxx wouldn't run at all, this would still work fine if sigchecks are already patched with the running system(like "cfw").
+	//TODO: Only run this with BOSS-sysmodule version(s) compatible with bosshaxx.
+
 	printf("Testing BOSS...\n");
 
 	ret = bossInit(0);
 
 	if(R_SUCCEEDED(ret))
 	{
+		printf("Deleting BOSS data...\n");
+
 		ret = bossDeleteTask(taskID, 0);
-		printf("bossDeleteTask returned 0x%08x.\n", (unsigned int)ret);
+		//printf("bossDeleteTask returned 0x%08x.\n", (unsigned int)ret);
 
 		ret = bossDeleteNsData(NsDataId);
-		printf("bossDeleteNsData returned 0x%08x.\n", (unsigned int)ret);
+		//printf("bossDeleteNsData returned 0x%08x.\n", (unsigned int)ret);
+
+		printf("Registering/starting the BOSS task...\n");
 
 		bossSetupContextDefault(&ctx, 60, "https://192.168.254.11/bossdata");
 
 		ret = bossSendContextConfig(&ctx);
-		printf("bossSendContextConfig returned 0x%08x.\n", (unsigned int)ret);
+		if(R_FAILED(ret))printf("bossSendContextConfig returned 0x%08x.\n", (unsigned int)ret);
 
-		if(ret==0)
+		if(R_SUCCEEDED(ret))
 		{
 			ret = bossRegisterTask(taskID, 0, 0);
-			printf("bossRegisterTask returned 0x%08x.\n", (unsigned int)ret);
+			if(R_FAILED(ret))printf("bossRegisterTask returned 0x%08x.\n", (unsigned int)ret);
 
 			if(R_SUCCEEDED(ret))
 			{
 				ret = bossStartTaskImmediate(taskID);
-				printf("bossStartTaskImmediate returned 0x%08x.\n", (unsigned int)ret);
+				if(R_FAILED(ret))printf("bossStartTaskImmediate returned 0x%08x.\n", (unsigned int)ret);
 			}
-
-			printf("Waiting for the task to run...\n");
 
 			if(R_SUCCEEDED(ret))
 			{
+				printf("Waiting for the task to run...\n");
+
 				while(1)
 				{
 					if(R_SUCCEEDED(ret))
@@ -455,7 +462,7 @@ Result test_boss()
 							printf("bossGetTaskState returned 0x%08x.\n", (unsigned int)ret);
 							break;
 						}
-						if(R_SUCCEEDED(ret))printf("bossGetTaskState: tmp0=0x%x, tmp2=0x%x, tmp1=0x%x.\n", (unsigned int)tmp0, (unsigned int)tmp2, (unsigned int)tmp1);
+						if(R_SUCCEEDED(ret))printf("...\n");//printf("bossGetTaskState: tmp0=0x%x, tmp2=0x%x, tmp1=0x%x.\n", (unsigned int)tmp0, (unsigned int)tmp2, (unsigned int)tmp1);
 
 						if(tmp0!=BOSSTASKSTATUS_STARTED)break;
 
@@ -472,9 +479,11 @@ Result test_boss()
 
 			if(R_SUCCEEDED(ret))
 			{
+				printf("Reading BOSS content...\n");
+
 				tmp2 = 0;
 				ret = bossReadNsData(NsDataId, 0, tmpbuf, sizeof(tmpbuf), &tmp2, NULL);
-				printf("bossReadNsData returned 0x%08x, transfer_total=0x%x.\n", (unsigned int)ret, (unsigned int)tmp2);
+				if(R_FAILED(ret))printf("bossReadNsData returned 0x%08x, transfer_total=0x%x.\n", (unsigned int)ret, (unsigned int)tmp2);
 
 				if(R_SUCCEEDED(ret) && tmp2!=sizeof(tmpbuf))ret = -10;
 			}
@@ -490,9 +499,16 @@ Result test_boss()
 
 			if(R_SUCCEEDED(ret))
 			{
+				printf("Deleting BOSS data...\n");
 
 				ret = bossDeleteNsData(NsDataId);
-				printf("bossDeleteNsData returned 0x%08x.\n", (unsigned int)ret);
+				if(R_FAILED(ret))printf("bossDeleteNsData returned 0x%08x.\n", (unsigned int)ret);
+			}
+
+			if(R_SUCCEEDED(ret))
+			{
+				ret = bossDeleteTask(taskID, 0);
+				if(R_FAILED(ret))printf("bossDeleteTask returned 0x%08x.\n", (unsigned int)ret);
 			}
 		}
 
