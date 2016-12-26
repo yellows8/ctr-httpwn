@@ -452,7 +452,7 @@ Result test_boss()
 	}
 	cfguExit();
 
-	ret = bossInit(0);
+	ret = bossInit(0, false);
 
 	if(R_SUCCEEDED(ret))
 	{
@@ -470,16 +470,6 @@ Result test_boss()
 		snprintf(url, sizeof(url)-1, "https://192.168.254.11/ctr-httpwn/boss/bossdata_%s", regionids_table[region]);
 
 		bossSetupContextDefault(&ctx, 60, url);
-
-		ctx.property_x11 = 1;
-
-		memset(ctx.property_xa, 0x40, sizeof(ctx.property_xa)-1);
-
-		memset(ctx.property_xb, 0x41, sizeof(ctx.property_xb)-1);
-
-		memset(ctx.property_x15, 0x42, sizeof(ctx.property_x15)-1);
-
-		memset(ctx.property_x3e, 0x43, sizeof(ctx.property_x3e)-1);
 
 		ret = bossSendContextConfig(&ctx);
 		if(R_FAILED(ret))printf("bossSendContextConfig returned 0x%08x.\n", (unsigned int)ret);
