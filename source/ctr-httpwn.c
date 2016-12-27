@@ -467,7 +467,7 @@ Result test_boss()
 		printf("Registering/starting the BOSS task...\n");
 
 		memset(url, 0, sizeof(url));
-		snprintf(url, sizeof(url)-1, "https://192.168.254.11/ctr-httpwn/boss/bossdata_%s", regionids_table[region]);
+		snprintf(url, sizeof(url)-1, "https://10.0.0.23/ctr-httpwn/boss/bossdata_%s", regionids_table[region]);
 
 		bossSetupContextDefault(&ctx, 60, url);
 
