@@ -414,7 +414,7 @@ Result test_customcmdhandler(httpcContext *context)
 	return ret;
 }
 
-Result test_boss(char *urlbase)
+Result test_boss(char *urlbase, httpcContext *httpcontext)
 {
 	Result ret=0;
 	char *taskID = "task";
@@ -426,6 +426,8 @@ Result test_boss(char *urlbase)
 	u8 region=0;
 
 	bossContext ctx;
+
+	Handle bosshandles[2];
 
 	char url[256];
 
@@ -548,6 +550,33 @@ Result test_boss(char *urlbase)
 				ret = bossDeleteTask(taskID, 0);
 				if(R_FAILED(ret))printf("bossDeleteTask returned 0x%08x.\n", (unsigned int)ret);
 			}
+
+			if(R_SUCCEEDED(ret))
+			{
+				memset(bosshandles, 0, sizeof(bosshandles));
+
+				ret = _httpcCustomCmd(httpcontext, 1, 0, 0, &bosshandles[0]);
+				if(R_SUCCEEDED(ret))ret = _httpcCustomCmd(httpcontext, 1, 1, 0, &bosshandles[1]);
+
+				if(R_FAILED(ret))
+				{
+					printf("Failed to get handles from the custom-cmdhandler: 0x%08x.\n", (unsigned int)ret);
+				}
+				else
+				{
+					if(bosshandles[0]==0 || bosshandles[1]==0)
+					{
+						printf("bosshaxx failed to run. This can be ignored since the BOSS-container content was loaded fine.\n");
+					}
+					else
+					{
+						printf("bosshaxx ran successfully.\n");
+
+						svcCloseHandle(bosshandles[0]);
+						svcCloseHandle(bosshandles[1]);
+					}
+				}
+			}
 		}
 
 		bossExit();
@@ -571,8 +600,6 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 	u32 i;
 
 	targeturlctx *boss_targeturlctx = NULL;
-
-	//return test_boss();
 
 	ret = httpcOpenContext(&context, HTTPC_METHOD_POST, requrl, 1);
 	if(ret!=0)return ret;
@@ -745,12 +772,7 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 			}
 		}
 
-		ret = httpcCloseContext(&context);
-		if(R_FAILED(ret))
-		{
-			printf("httpcCloseContext returned 0x%08x, i=%u.\n", (unsigned int)ret, (unsigned int)i);
-			return ret;
-		}
+		if(i!=2)httpcCloseContext(&context);
 	}
 
 	if(R_SUCCEEDED(ret))
@@ -758,14 +780,16 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 		boss_targeturlctx = config_findurltarget_entry(&first_targeturlctx, NULL, "bosshaxx");
 		if(boss_targeturlctx)
 		{
-			ret = test_boss(boss_targeturlctx->url);
-			if(R_FAILED(ret))printf("Reboot your system then try again, if you want to use bosshaxx.\n");
+			ret = test_boss(boss_targeturlctx->url, &context);
+			if(R_FAILED(ret))printf("Reboot your system then try again.\n");
 		}
 		else
 		{
 			printf("WARNING: bosshaxx wasn't setup, likely due to incompatible system-version. test_boss() will not be run.\n");
 		}
 	}
+
+	httpcCloseContext(&context);
 
 	return ret;
 }
