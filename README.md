@@ -49,8 +49,8 @@ __Using the system eShop application with EUR <v10.4 is broken(the application c
 
 Config data is stored under the same directory as the .3dsx:
 * "server_config.xml": The config downloaded from the server is written to here every time the config is successfully downloaded. If downloading config from the server fails, ctr-httpwn allows using this cached config if you want. ctr-httpwn checks for the existence of this file to determine whether to display the {read the documentation} message at startup.
-* "user_config.xml": This is the optional user_config. This is parsed the exact same way as the server config, however note that the "incompatsysver_message" element's text isn't displayed.
-* "user_nim_rootcertchain_rootca.der": When this exists, this cert is used for adding to the NIM RootCertChains instead of the built-in ctr-httpwn cert. Do not use this unless you changed the NetUpdateSOAP new_url or disabled the NetUpdateSOAP targeturl, via user_config.xml.
+* "user_config/": This directory contains the optional user_config .xml files. These are parsed the exact same way as the server config, however note that the "incompatsysver_message" element's text isn't displayed. The "user_config.xml" file from the same directory as the .3dsx is automatically moved into this directory("user_config.xml" was the fixed filepath for user_config pre-v1.2 ctr-httpwn).
+* "user_nim_rootcertchain_rootca.der": When this exists, this cert is used for adding to the NIM RootCertChains instead of the built-in ctr-httpwn cert. Do not use this unless you changed the NetUpdateSOAP new_url or disabled the NetUpdateSOAP targeturl, via user_config.
 
 # Exploit details
 
@@ -66,7 +66,7 @@ This can only target httpc main-service-sessions which are open at the time this
 
 # Configuration
 
-The server config xml is parsed first, then the user_config if it exists. See also the SD-data section above. For details on the configuration handling/format, see "configdoc.xml", "web/config.php", and the source code.
+The internal config is parsed first, then server xml, then lastly the user_config if it exists. See also the SD-data section above. For details on the configuration handling/format, see "configdoc.xml", "web/config.php", and the source code.
 
 If the total size for all of the configuration in memory is too large, ROP size errors will be thrown(since that config has to be stored in sysmodule memory).
 

@@ -94,7 +94,7 @@ u32 ROP_HTTPC_CMDHANDLEROBJ_VTABLE = 0x0011b854;//This is the vtable for the htt
 u32 ROP_HTTPC_CMDHANDLEROBJ_VTABLE_SIZE = 0x148;
 
 static u32 ropvmem_base = 0x0f000000;
-u32 ropvmem_size = 0x11000;
+u32 ropvmem_size = 0x13000;
 
 u32 httpheap_size = 0x22000;
 

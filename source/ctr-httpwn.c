@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <errno.h>
 #include <3ds.h>
 
 #include "config.h"
@@ -829,6 +831,85 @@ Result download_config(char *url, u8 *cert, u32 certsize, u8 *filebuffer, u32 dl
 	return 0;
 }
 
+int httpwn_dirfilter(const struct dirent *dirent)//Only return dir-entries with a name ending with ".xml".
+{
+	size_t len;
+
+	len = strlen(dirent->d_name);
+	if(len < 4)return 0;
+
+	if(dirent->d_name[0]=='.')return 0;//Ignore "hidden" dir-entries.
+
+	if(strncmp(&dirent->d_name[len-4], ".xml", 4))return 0;
+
+	return 1;
+}
+
+//Originally this was supposed to use scandir() but scandir() isn't actually available. From menuhax_manager.
+Result httpwn_scandir(const char *dirpath, struct dirent ***namelist, size_t *total_entries)
+{
+	Result ret=0;
+
+	size_t pos=0;
+	DIR *dirp;
+	struct dirent *direntry;
+
+	*total_entries = 0;
+
+	dirp = opendir(dirpath);
+	if(dirp==NULL)return errno;
+
+	while((direntry = readdir(dirp)))
+	{
+		if(httpwn_dirfilter(direntry)==0)continue;
+
+		(*total_entries)++;
+	}
+
+	closedir(dirp);
+
+	if(*total_entries == 0)return 0;
+
+	dirp = opendir(dirpath);
+	if(dirp==NULL)return errno;
+
+	*namelist = malloc(sizeof(struct dirent *) * (*total_entries));
+	if(*namelist == NULL)
+	{
+		closedir(dirp);
+		return -2;
+	}
+
+	ret = 0;
+
+	while((direntry = readdir(dirp)) && pos < *total_entries)
+	{
+		if(httpwn_dirfilter(direntry)==0)continue;
+
+		(*namelist)[pos] = malloc(sizeof(struct dirent));
+		if((*namelist)[pos] == NULL)
+		{
+			ret = -2;
+			break;
+		}
+
+		memcpy((*namelist)[pos], direntry, sizeof(struct dirent));
+
+		pos++;
+	}
+
+	closedir(dirp);
+
+	if(ret!=0)
+	{
+		for(pos=0; pos<(*total_entries); pos++)free((*namelist)[pos]);
+		free(*namelist);
+		*namelist = NULL;
+	}
+
+	return 0;
+}
+
 Result httpwn_setup(char *serverconfig_localpath)
 {
 	Result ret = 0;
@@ -845,7 +926,13 @@ Result httpwn_setup(char *serverconfig_localpath)
 	configctx config;
 	targeturlctx *first_targeturlctx = NULL;
 
+	struct dirent **namelist = NULL;
+	size_t total_entries=0;
+	int pos;
+
 	FILE *f;
+
+	char filepath[256];
 
 	memset(&config, 0, sizeof(configctx));
 	config.first_targeturlctx = &first_targeturlctx;
@@ -1018,27 +1105,53 @@ Result httpwn_setup(char *serverconfig_localpath)
 
 	if(ret==0)
 	{
-		f = fopen("user_config.xml", "rb");
-		if(f)
+		mkdir("user_config", 0777);
+		rename("user_config.xml", "user_config/user_config.xml");
+
+		ret = httpwn_scandir("user_config", &namelist, &total_entries);
+		if(ret!=0)
 		{
-			printf("Loading+parsing user_config.xml since it exists on SD...\n");
-
-			memset(filebuffer, 0, filebuffer_size);
-			fread(filebuffer, 1, filebuffer_size-1, f);
-			fclose(f);
-
-			ret = config_parse(&config, (char*)filebuffer);
-
-			if(ret==0)
+			ret = 0;
+		}
+		else if(total_entries)
+		{
+			for(pos=0; pos<total_entries; pos++)
 			{
-				if(display_config_message(&config, "Message from the user_config:"))
+				memset(filepath, 0, sizeof(filepath));
+				snprintf(filepath, sizeof(filepath)-1, "%s/%s", "user_config", namelist[pos]->d_name);
+
+				f = fopen(filepath, "rb");
+				if(f)
 				{
-					httpcExit();
-					free(http_codebin_buf);
-					free(filebuffer);
-					return 0;
+					printf("Loading+parsing the following from SD: %s\n", filepath);
+
+					memset(filebuffer, 0, filebuffer_size);
+					fread(filebuffer, 1, filebuffer_size-1, f);
+					fclose(f);
+
+					ret = config_parse(&config, (char*)filebuffer);
+
+					if(ret==0)
+					{
+						if(display_config_message(&config, "Message from the user_config:"))
+						{
+							httpcExit();
+							free(http_codebin_buf);
+							free(filebuffer);
+
+							for(pos=0; pos<total_entries; pos++)free(namelist[pos]);
+							free(namelist);
+
+							return 0;
+						}
+					}
 				}
+
+				if(ret!=0)break;
 			}
+
+			for(pos=0; pos<total_entries; pos++)free(namelist[pos]);
+			free(namelist);
 		}
 	}
 
