@@ -430,7 +430,6 @@ Result test_boss()
 	char url[256];
 
 	//This tests BOSS(SpotPass) to verify that unsigned boss-container content can be used. This is also for running bosshaxx via the ctr-httpwn config for it. Even if bosshaxx wouldn't run at all, this would still work fine if sigchecks are already patched with the running system(like "cfw").
-	//TODO: Only run this with BOSS-sysmodule version(s) compatible with bosshaxx.
 
 	printf("Testing BOSS...\n");
 
@@ -512,7 +511,7 @@ Result test_boss()
 
 			if(R_SUCCEEDED(ret) && tmp0==BOSSTASKSTATUS_ERROR)
 			{
-				printf("BOSS task failed.\n");
+				printf("BOSS task failed. This usually indicates a network failure.\n");
 				ret = -9;
 			}
 
@@ -752,7 +751,18 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 		}
 	}
 
-	if(R_SUCCEEDED(ret))ret = test_boss();
+	if(R_SUCCEEDED(ret))
+	{
+		if(config_findurltarget_entry(&first_targeturlctx, NULL, "bosshaxx"))
+		{
+			ret = test_boss();
+			if(R_FAILED(ret))printf("Reboot your system then try again, if you want to use bosshaxx.\n");
+		}
+		else
+		{
+			printf("WARNING: bosshaxx wasn't setup, likely due to incompatible system-version. test_boss() will not be run.\n");
+		}
+	}
 
 	return ret;
 }
@@ -937,19 +947,7 @@ Result httpwn_setup(char *serverconfig_localpath)
 	memset(&config, 0, sizeof(configctx));
 	config.first_targeturlctx = &first_targeturlctx;
 
-	ret = amInit();
-	if(ret!=0)
-	{
-		printf("Failed to initialize AM: 0x%08x.\n", (unsigned int)ret);
-		if(ret==0xd8e06406)
-		{
-			printf("The AM service is inaccessible. With the *hax payloads this should never happen. This is normal with plain ninjhax v1.x: this app isn't usable from ninjhax v1.x without any further hax.\n");
-		}
-		return ret;
-	}
-
 	ret = AM_GetTitleInfo(MEDIATYPE_NAND, 1, &http_sysmodule_titleid, &title_entry);
-	amExit();
 	if(ret!=0)
 	{
 		printf("Failed to get the HTTP sysmodule title-version: 0x%08x.\n", (unsigned int)ret);
@@ -1013,6 +1011,7 @@ Result httpwn_setup(char *serverconfig_localpath)
 				httpcExit();
 				free(http_codebin_buf);
 				free(filebuffer);
+				config_freemem(&config);
 				return 0;
 			}
 		}
@@ -1023,6 +1022,7 @@ Result httpwn_setup(char *serverconfig_localpath)
 		httpcExit();
 		free(http_codebin_buf);
 		free(filebuffer);
+		config_freemem(&config);
 		return -10;
 	}
 
@@ -1063,6 +1063,7 @@ Result httpwn_setup(char *serverconfig_localpath)
 		{
 			httpcExit();
 			free(http_codebin_buf);
+			config_freemem(&config);
 			return ret;
 		}
 	}
@@ -1099,6 +1100,7 @@ Result httpwn_setup(char *serverconfig_localpath)
 			httpcExit();
 			free(http_codebin_buf);
 			free(filebuffer);
+			config_freemem(&config);
 			return 0;
 		}
 	}
@@ -1138,6 +1140,7 @@ Result httpwn_setup(char *serverconfig_localpath)
 							httpcExit();
 							free(http_codebin_buf);
 							free(filebuffer);
+							config_freemem(&config);
 
 							for(pos=0; pos<total_entries; pos++)free(namelist[pos]);
 							free(namelist);
@@ -1161,6 +1164,7 @@ Result httpwn_setup(char *serverconfig_localpath)
 		httpcExit();
 		free(http_codebin_buf);
 		free(filebuffer);
+		config_freemem(&config);
 		return ret;
 	}
 
@@ -1233,7 +1237,24 @@ int main(int argc, char **argv)
 		ret = romfsInit();
 		if(R_FAILED(ret))printf("romfsInit() failed: 0x%08x.\n", (unsigned int)ret);
 
-		if(R_SUCCEEDED(ret))ret = httpwn_setup(serverconfig_localpath);
+		if(R_SUCCEEDED(ret))
+		{
+			ret = amInit();
+			if(ret!=0)
+			{
+				printf("Failed to initialize AM: 0x%08x.\n", (unsigned int)ret);
+				if(ret==0xd8e06406)
+				{
+					printf("The AM service is inaccessible. With the *hax payloads this should never happen. This is normal with plain ninjhax v1.x: this app isn't usable from ninjhax v1.x without any further hax.\n");
+				}
+			}
+
+			if(R_SUCCEEDED(ret))
+			{
+				ret = httpwn_setup(serverconfig_localpath);
+				amExit();
+			}
+		}
 
 		romfsExit();
 

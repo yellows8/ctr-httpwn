@@ -67,6 +67,7 @@ typedef struct {
 int config_parse(configctx *config, char *xml);
 void config_freemem_reqoverride(targeturl_requestoverridectx **first_reqoverridectx);
 void config_freemem(configctx *config);
+targeturlctx *config_findurltarget_entry(targeturlctx **first_targeturlctx, targeturlctx **prev_targeturlctx, char *name);
 
 #ifdef __cplusplus
 }

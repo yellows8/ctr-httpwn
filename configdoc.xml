@@ -9,9 +9,10 @@
 	<!-- If you use the 'disabled' attribute with targeturl, for example '<targeturl disabled="1">', the specified targeturl config will be completely removed from configuration in memory. This can be used for disabling targeturls which were previously configured(like server config), or even disable a new targeturl without commenting it out. -->
 
 	<targeturl>
+		<!-- To have a targeturl config only be loaded when a certain title-version of a title is detected, you can use the following: <targeturl required_title="{titleid},{mediatype},v{titlever}"> -->
 		<!-- If you use the 'reset="1"' attribute with <caps>, <url>, and/or <new_url>, the data for that config in memory will be cleared to zero, as if the config for those fields were never set. This is mainly intended when for when overriding targeturls. -->
 
-		<name>mytargetname</name> <!-- Optional name, however targeturl overriding can only be done if the name is set. Only used during config parsing(still stored under sysmodule memory however). -->
+		<name>mytargetname</name> <!-- Optional name, however targeturl overriding can only be done if the name is set. Only used during config parsing(still stored under sysmodule memory however). The name value "bosshaxx" should not be specified here by user_config since it's used by ctr-httpwn itself. -->
 		<caps>AddRequestHeader AddPostDataAscii SendPOSTDataRawTimeout</caps> <!-- Optional capabilities bitmask. strstr() is used for each of these. See also source/config.h. Each type of requestoverride is only usable when it's enabled with these caps. -->
 		<url>targeturl</url> <!-- URL to target. If not set, this targeturl entry will trigger on *all* URLs handled by the CreateContext hook, if no targeturl triggers before this. The input CreateContext URL is compared with this, without the nul-terminator from the former. Hence, this targeturl will trigger on all URLs that start with this url(used with the server config for NNID). -->
 		<new_url>overwriteurl</new_url> <!-- Optional URL which replaces the URL passed to CreateContext. This shouldn't be longer than the original input URL for CreateContext, otherwise in some cases HTTP-sysmodule might crash due to trying to access unmapped memory. -->

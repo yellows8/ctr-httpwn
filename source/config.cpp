@@ -73,6 +73,10 @@ int config_parse(configctx *config, char *xml)
 	u32 pos, len;
 	unsigned int tmpval=0;
 
+	unsigned long long titleid;
+	unsigned int tmpval0, tmpval1;
+	AM_TitleEntry title_entry;
+
 	doc.Parse(xml);
 
 	if(doc.Error())
@@ -119,6 +123,7 @@ int config_parse(configctx *config, char *xml)
 			tmp_targeturlctx = NULL;
 
 			xml_tmpelem = xml_targeturl->FirstChildElement("name");
+			textptr = NULL;
 			if(xml_tmpelem)
 			{
 				textptr = xml_tmpelem->GetText();
@@ -127,6 +132,39 @@ int config_parse(configctx *config, char *xml)
 					if(textptr[0])
 					{
 						tmp_targeturlctx = config_findurltarget_entry(config->first_targeturlctx, &prev_targeturlctx, (char*)textptr);
+					}
+				}
+			}
+
+			textptr2 = xml_targeturl->Attribute("required_title");
+			if(textptr2)
+			{
+				titleid = 0;
+				tmpval0 = 0;
+				tmpval1 = 0;
+				if(sscanf(textptr2, "%016llx,%u,v%u", &titleid, &tmpval0, &tmpval1)!=3)
+				{
+					printf("WARNING: The required_title attribute value is invalid for a config entry, ignoring this attribute.\n");
+					if(textptr)printf("targeturl name = %s\n", textptr);
+				}
+				else
+				{
+					ret = AM_GetTitleInfo((FS_MediaType)tmpval0, 1, &titleid, &title_entry);
+					if(ret!=0)
+					{
+						printf("WARNING: Failed to get the title info for the title specified by config: 0x%08x.\n", (unsigned int)ret);
+						if(textptr)printf("targeturl name = %s\n", textptr);
+						printf("Config won't be loaded for this targeturl entry.\n");
+						continue;
+					}
+
+					if(title_entry.version != tmpval1)
+					{
+						ret = -1;
+						/*printf("WARNING: The title-version specified by the config entry doesn't match the current title-version for this title.\n");
+						if(textptr)printf("targeturl name = %s\n", textptr);
+						printf("Config won't be loaded for this targeturl entry.\n");*/
+						continue;
 					}
 				}
 			}
