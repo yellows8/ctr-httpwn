@@ -37,7 +37,7 @@ ROMFS		:=	romfs
 VERSION	:=	v1.2
 
 APP_TITLE	:=	ctr-httpwn $(VERSION)
-APP_DESCRIPTION	:=	Bypass required sysupdates by exploiting a sysmodule.   https://github.com/yellows8/ctr-httpwn
+APP_DESCRIPTION	:=	Bypass required sysupdates, etc.                        https://github.com/yellows8/ctr-httpwn
 APP_AUTHOR	:=	yellows8
 
 #---------------------------------------------------------------------------------
