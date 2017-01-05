@@ -584,6 +584,7 @@ Result test_boss(char *urlbase, httpcContext *httpcontext)
 	else
 	{
 		printf("bossInit returned 0x%08x.\n", (unsigned int)ret);
+		printf("*hax payload >=v2.8 is required.\n");
 	}
 
 	return ret;
