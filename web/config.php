@@ -2,6 +2,26 @@
 
 include_once("/home/yellows8/ninupdates/api.php");
 
+if(isset($_SERVER['HTTP_USER_AGENT']))
+{
+	$ua = $_SERVER['HTTP_USER_AGENT'];
+	if(strncmp($ua, "ctr-httpwn/", 11)==0)
+	{
+		$release_version = file_get_contents("/home/yellows8/ctr-httpwn/release_version");
+		if($release_version===FALSE)
+		{
+			header('HTTP/1.1 500 Internal Server Error');
+			die("A server-side error occured.\n");
+		}
+
+		if(strcmp(substr($ua, 11), $release_version)!=0)
+		{
+			header('HTTP/1.1 500 Internal Server Error');
+			die("The server release_version doesn't match the application release_version. A new version of ctr-httpwn is likely available.\n");//Will be displayed to the end-user by the ctr-httpwn app since this is HTTP 500.
+		}
+	}
+}
+
 $retval = ninupdates_api("gettitleversions", "ctr", "E", "000400DB00016302", 2);
 if($retval!=0)
 {
