@@ -51,6 +51,7 @@ Config data is stored under the same directory as the .3dsx:
 * "server_config.xml": The config downloaded from the server is written to here every time the config is successfully downloaded. If downloading config from the server fails, ctr-httpwn allows using this cached config if you want. ctr-httpwn checks for the existence of this file to determine whether to display the {read the documentation} message at startup.
 * "user_config/": This directory contains the optional user_config .xml files. These are parsed the exact same way as the server config, however note that the "incompatsysver_message" element's text isn't displayed. The "user_config.xml" file from the same directory as the .3dsx is automatically moved into this directory("user_config.xml" was the fixed filepath for user_config pre-v1.2 ctr-httpwn).
 * "user_nim_rootcertchain_rootca.der": When this exists, this cert is used for adding to the NIM RootCertChains instead of the built-in ctr-httpwn cert. Do not use this unless you changed the NetUpdateSOAP new_url or disabled the NetUpdateSOAP targeturl, via user_config.
+* "url_config.txt" URL to use for downloading the server config from, instead of the default. The rootCA cert used for this is the ctr-httpwn builtin cert(Let's Encrypt) - however plain http is can be used too.
 
 # Exploit details
 
@@ -77,4 +78,5 @@ This basically only supports overwriting request data, not adding anything curre
 * Tinyxml2 is used for config XML parsing, via portlibs.
 * @ihaveamac for the app icon(issue #1).
 * types.h at ipctakeover/boss/ is from ctrtool.
+* The filepath for "url_config.txt" is from here: https://github.com/skiptirengu/ctr-httpwn
 

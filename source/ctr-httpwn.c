@@ -414,7 +414,7 @@ Result test_customcmdhandler(httpcContext *context)
 	return ret;
 }
 
-Result test_boss()
+Result test_boss(char *urlbase)
 {
 	Result ret=0;
 	char *taskID = "task";
@@ -468,7 +468,7 @@ Result test_boss()
 		printf("Registering/starting the BOSS task...\n");
 
 		memset(url, 0, sizeof(url));
-		snprintf(url, sizeof(url)-1, "https://yls8.mtheall.com/ctr-httpwn/boss/bossdata_%s", regionids_table[region]);
+		snprintf(url, sizeof(url)-1, "%s_%s", urlbase, regionids_table[region]);
 
 		bossSetupContextDefault(&ctx, 60, url);
 
@@ -488,7 +488,7 @@ Result test_boss()
 
 			if(R_SUCCEEDED(ret))
 			{
-				printf("Waiting for the task to run...\n");
+				printf("Waiting for the task to finish running...\n");
 
 				while(1)
 				{
@@ -569,6 +569,8 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 	Handle ropvmem_sharedmem_handle=0;
 	Handle httpc_sslc_handle = 0;
 	u32 i;
+
+	targeturlctx *boss_targeturlctx = NULL;
 
 	//return test_boss();
 
@@ -753,9 +755,10 @@ Result http_haxx(char *requrl, u8 *cert, u32 certsize, targeturlctx *first_targe
 
 	if(R_SUCCEEDED(ret))
 	{
-		if(config_findurltarget_entry(&first_targeturlctx, NULL, "bosshaxx"))
+		boss_targeturlctx = config_findurltarget_entry(&first_targeturlctx, NULL, "bosshaxx");
+		if(boss_targeturlctx)
 		{
-			ret = test_boss();
+			ret = test_boss(boss_targeturlctx->url);
 			if(R_FAILED(ret))printf("Reboot your system then try again, if you want to use bosshaxx.\n");
 		}
 		else
@@ -942,7 +945,12 @@ Result httpwn_setup(char *serverconfig_localpath)
 
 	FILE *f;
 
+	char *strptr;
+	char *url = NULL;
+
 	char filepath[256];
+
+	char urlbuf[1024];
 
 	memset(&config, 0, sizeof(configctx));
 	config.first_targeturlctx = &first_targeturlctx;
@@ -1026,8 +1034,26 @@ Result httpwn_setup(char *serverconfig_localpath)
 		return -10;
 	}
 
+	url = "https://yls8.mtheall.com/ctr-httpwn/config.php";
+
+	memset(urlbuf, 0, sizeof(urlbuf));
+	f = fopen("url_config.txt", "rb");//This is the url-config filepath from here: https://github.com/skiptirengu/ctr-httpwn
+	if(f)
+	{
+		fread(urlbuf, 1, sizeof(urlbuf)-1, f);
+		fclose(f);
+
+		strptr = strchr(urlbuf, '\r');
+		if(strptr)*strptr = 0;
+		strptr = strchr(urlbuf, '\n');
+		if(strptr)*strptr = 0;
+		url = urlbuf;
+
+		printf("Using URL loaded from url_config.txt: %s\n", url);
+	}
+
 	printf("Downloading config...\n");
-	ret = download_config("https://yls8.mtheall.com/ctr-httpwn/config.php?appver="VERSION, cert, certsize, filebuffer, filebuffer_size-1, &statuscode);
+	ret = download_config(url, cert, certsize, filebuffer, filebuffer_size-1, &statuscode);
 	if(ret!=0)
 	{
 		printf("Config downloading failed: 0x%08x.\n", (unsigned int)ret);
