@@ -5,7 +5,7 @@ include_once("/home/yellows8/ninupdates/api.php");
 $retval = ninupdates_api("gettitleversions", "ctr", "E", "000400DB00016302", 2);
 if($retval!=0)
 {
-	writeNormalLog("ctr-httpwn config.php: API returned error $retval, for NVer. RESULT: 500");
+	//writeNormalLog("ctr-httpwn config.php: API returned error $retval, for NVer. RESULT: 500");
 	header('HTTP/1.1 500 Internal Server Error');
 	die("A server-side error occured.\n");
 }
@@ -15,7 +15,7 @@ $NVer_hextitlever = sprintf("%04X", substr($ninupdatesapi_out_version_array[0], 
 $retval = ninupdates_api("gettitleversions", "ctr", "E", "0004013000003202", 2);
 if($retval!=0)
 {
-	writeNormalLog("ctr-httpwn config.php: API returned error $retval, for friends-module. RESULT: 500");
+	//writeNormalLog("ctr-httpwn config.php: API returned error $retval, for friends-module. RESULT: 500");
 	header('HTTP/1.1 500 Internal Server Error');
 	die("A server-side error occured.\n");
 }
@@ -23,7 +23,7 @@ if($retval!=0)
 $fpdver = file_get_contents("$sitecfg_workdir/friendsmodule_fpdvers/" . $ninupdatesapi_out_version_array[0]);
 if($fpdver===FALSE || $fpdver==="")
 {
-	writeNormalLog("ctr-httpwn config.php: Failed to load a valid fpdver file. RESULT: 500");
+	//writeNormalLog("ctr-httpwn config.php: Failed to load a valid fpdver file. RESULT: 500");
 	header('HTTP/1.1 500 Internal Server Error');
 	die("The config xml is currently not available, probably due to a new sysupdate just being released. It will automatically become available once ninupdates sysupdate post-processing finishes.\n");
 }
@@ -64,20 +64,39 @@ for($i=0; $i<$targets_array_size; $i++)
 	$retval = ninupdates_api("gettitleversions", "ctr", $regid, $titleid, 2);
 	if($retval!=0)
 	{
-		writeNormalLog("ctr-httpwn config.php: API returned error $retval, for target $i. RESULT: 500");
+		//writeNormalLog("ctr-httpwn config.php: API returned error $retval, for target $i. RESULT: 500");
 		header('HTTP/1.1 500 Internal Server Error');
 		die("A server-side error occured.\n");
 	}
 
-	$remaster_version = file_get_contents("$sitecfg_workdir/remaster_versions/$titlename/$region/" . $ninupdatesapi_out_version_array[0]);
-	if($remaster_version===FALSE || $remaster_version==="")
+	$remaster_filepath = "$sitecfg_workdir/remaster_versions/$titlename/$region/" . $ninupdatesapi_out_version_array[0];
+	$remaster_exists = 1;
+	$remaster_version = FALSE;
+	if(file_exists($remaster_filepath)===FALSE)$remaster_exists = 0;
+	if($remaster_exists==1)$remaster_version = file_get_contents($remaster_filepath);
+	if($remaster_exists==0 || $remaster_version===FALSE || $remaster_version==="")
 	{
-		writeNormalLog("ctr-httpwn config.php: Failed to load a valid remaster_version file, for target $i. RESULT: 500");
+		//writeNormalLog("ctr-httpwn config.php: Failed to load a valid remaster_version file, for target $i. RESULT: 500");
 		header('HTTP/1.1 500 Internal Server Error');
 		die("The config xml is currently not available, probably due to a new sysupdate just being released. It will automatically become available once ninupdates sysupdate post-processing finishes.\n");
 	}
 
 	$targets_verarray[] = $remaster_version;
+}
+
+$bosshaxx_config = "";
+$bosshaxx_config_filepath = "/home/yellows8/ctr-httpwn/ipctakeover/boss/boss_config_builds/v13314";
+if(file_exists($bosshaxx_config_filepath)===FALSE)
+{
+	header('HTTP/1.1 500 Internal Server Error');
+	die("A server-side error occured.\n");
+}
+
+$bosshaxx_config = file_get_contents($bosshaxx_config_filepath);
+if($bosshaxx_config===FALSE)
+{
+	header('HTTP/1.1 500 Internal Server Error');
+	die("A server-side error occured.\n");
 }
 
 $reqoverrides = "";
@@ -165,6 +184,51 @@ for($i=0; $i<$targets_array_size; $i++)
 		</requestoverride>
 
 		<?=$reqoverrides?>
+	</targeturl>
+
+	<!-- This is the bosshaxx section. The <url> values have to start with "https://", and the <new_url> values have to start with "http://". -->
+<?=$bosshaxx_config?>
+
+	<targeturl>
+		<name>bossdata_JPN</name>
+		<caps>AddRequestHeader</caps>
+		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_JPN</url>
+		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_JPN</new_url>
+	</targeturl>
+
+	<targeturl>
+		<name>bossdata_USA</name>
+		<caps>AddRequestHeader</caps>
+		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_USA</url>
+		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_USA</new_url>
+	</targeturl>
+
+	<targeturl>
+		<name>bossdata_EUR</name>
+		<caps>AddRequestHeader</caps>
+		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_EUR</url>
+		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_EUR</new_url>
+	</targeturl>
+
+	<targeturl>
+		<name>bossdata_CHN</name>
+		<caps>AddRequestHeader</caps>
+		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_CHN</url>
+		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_CHN</new_url>
+	</targeturl>
+
+	<targeturl>
+		<name>bossdata_KOR</name>
+		<caps>AddRequestHeader</caps>
+		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_KOR</url>
+		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_KOR</new_url>
+	</targeturl>
+
+	<targeturl>
+		<name>bossdata_TWN</name>
+		<caps>AddRequestHeader</caps>
+		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_TWN</url>
+		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_TWN</new_url>
 	</targeturl>
 </config>
 

