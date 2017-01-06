@@ -214,6 +214,11 @@ for($i=0; $i<$targets_array_size; $i++)
 		<caps>AddRequestHeader</caps>
 		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_JPN</url>
 		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_JPN</new_url>
+
+		<requestoverride type="reqheader">
+			<name>User-Agent</name>
+			<new_value>PBOS-8.0/0000000000000000-0000000000000000/00.0.0-00X/00000/0</new_value>
+		</requestoverride>
 	</targeturl>
 
 	<targeturl>
@@ -221,6 +226,11 @@ for($i=0; $i<$targets_array_size; $i++)
 		<caps>AddRequestHeader</caps>
 		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_USA</url>
 		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_USA</new_url>
+
+		<requestoverride type="reqheader">
+			<name>User-Agent</name>
+			<new_value>PBOS-8.0/0000000000000000-0000000000000000/00.0.0-00X/00000/0</new_value>
+		</requestoverride>
 	</targeturl>
 
 	<targeturl>
@@ -228,6 +238,11 @@ for($i=0; $i<$targets_array_size; $i++)
 		<caps>AddRequestHeader</caps>
 		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_EUR</url>
 		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_EUR</new_url>
+
+		<requestoverride type="reqheader">
+			<name>User-Agent</name>
+			<new_value>PBOS-8.0/0000000000000000-0000000000000000/00.0.0-00X/00000/0</new_value>
+		</requestoverride>
 	</targeturl>
 
 	<targeturl>
@@ -235,6 +250,11 @@ for($i=0; $i<$targets_array_size; $i++)
 		<caps>AddRequestHeader</caps>
 		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_CHN</url>
 		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_CHN</new_url>
+
+		<requestoverride type="reqheader">
+			<name>User-Agent</name>
+			<new_value>PBOS-8.0/0000000000000000-0000000000000000/00.0.0-00X/00000/0</new_value>
+		</requestoverride>
 	</targeturl>
 
 	<targeturl>
@@ -242,6 +262,11 @@ for($i=0; $i<$targets_array_size; $i++)
 		<caps>AddRequestHeader</caps>
 		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_KOR</url>
 		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_KOR</new_url>
+
+		<requestoverride type="reqheader">
+			<name>User-Agent</name>
+			<new_value>PBOS-8.0/0000000000000000-0000000000000000/00.0.0-00X/00000/0</new_value>
+		</requestoverride>
 	</targeturl>
 
 	<targeturl>
@@ -249,6 +274,11 @@ for($i=0; $i<$targets_array_size; $i++)
 		<caps>AddRequestHeader</caps>
 		<url>https://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_TWN</url>
 		<new_url>http://<?=$_SERVER['SERVER_NAME']?>/ctr-httpwn/boss/bossdata_TWN</new_url>
+
+		<requestoverride type="reqheader">
+			<name>User-Agent</name>
+			<new_value>PBOS-8.0/0000000000000000-0000000000000000/00.0.0-00X/00000/0</new_value>
+		</requestoverride>
 	</targeturl>
 </config>
 

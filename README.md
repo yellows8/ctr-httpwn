@@ -20,11 +20,11 @@ If this starts loading user_config unexpectedly when you didn't write anything t
 
 Hashes for the release builds are available at "web/hashes" and here(https://yls8.mtheall.com/ctr-httpwn/hashes), the github+yls8.mtheall.com "hashes" files *must* match.
 
-NOTE: ctr-httpwn v1.0.1 can't affect/change any network requests for adding eShop funds.
+NOTE: ctr-httpwn <=v1.2 can't affect/change any network requests for adding eShop funds.
 
 # Usage
 
-Do not use this from Old3DS-browserhax. Do not run this app more than once when ctr-httpwn is already active under the sysmodule.
+Do not use this from Old3DS-browserhax if you would've returned to Home Menu afterwards. Do not run this app more than once when ctr-httpwn is already active under the sysmodule.
 
 Just run the app, then if successful return to hbmenu. For using the system eShop application on <10.0.0-X, you must use HANS-eShop included with the homebrew starter-kit(this should be the one updated on March 20, 2016, or later). For everything else, and for using system-eShop-app on >=v10.0.0-X, you can just return to Home Menu from hbmenu. This can be done by pressing the START button, then use the option for returning to Home Menu without rebooting(you can use HANS if you *really* want to, except for eShop on >=10.0.0-X, returning to Home Menu is not *required*).
 
@@ -59,7 +59,7 @@ See the source code regarding initial exploitation. ctr-httpwn under the sysmodu
 
 This can only target httpc main-service-sessions which are open at the time this app runs. It's unknown if/when a way to target main-service-sessions opened after this app would be implemented, but right now it's not needed in the server config anyway. In other words, *only* the sysmodules using httpc can be targeted currently:
 
-* boss(SpotPass): You could have SpotPass use network requests with your own URLs for any content you want, including the policylist file used internally(https://3dbrew.org/wiki/SpotPass). For content using the BOSS-container using your own URLs with that content is really only useful for returning archived SpotPass content(without other haxx allowing modifying that RSA-signed BOSS-container content).
+* boss(SpotPass): You could have SpotPass use network requests with your own URLs for any content you want, including the policylist file used internally(https://3dbrew.org/wiki/SpotPass).
 * friends: This just uses the "/ac" page also targeted by the config returned by the server(for replacing the uploaded version values). This is used for friends-login/online-play, etc.
 * act(NNID): This does all of the NNID-related network requests. The server config replaces all of the version values sent in these NNID requests with the values from the latest sysupdate.
 * ac: Not really useful. This does the connection-test, but there's really nothing else used(this has code for using the nasc server but there's no known way to trigger that).
@@ -72,6 +72,14 @@ The internal config is parsed first, then server xml, then lastly the user_confi
 If the total size for all of the configuration in memory is too large, ROP size errors will be thrown(since that config has to be stored in sysmodule memory).
 
 This basically only supports overwriting request data, not adding anything currently. This also means you can't add your own TLS certs with this currently(minus the NIM RootCertChains, doing so with the ACT RootCertChain isn't enabled for safety).
+
+# ipctakeover / bosshaxx
+
+ctr-httpwn v1.2 added ipctakeover + bosshaxx. This basically allows one to (potentially) takeover processes which use httpc among those listed in the "Exploit details" section, via configuration entries.
+
+ctr-httpwn now includes bosshaxx(which uses ipctakeover), this is automatically run when the app is run. \*hax payload >=v2.8 is required for this. This basically allows unsigned BOSS-container [content](https://www.3dbrew.org/wiki/SpotPass) be used, however encryption for that content is still required. Once active, other exploits can then be installed which use SpotPass. The ctr-httpwn application also has access to service session handles from BOSS-sysmodule(ps:ps and fs:USER), but they're currently not used other than using the former with the implementation for allowing unsigned BOSS-container content.
+
+bosshaxx is only supported for BOSS-sysmodule v13314 currently(system-version >=10.4.0-X). The unsupported system-version "WARNING" for BOSS can be ignored on older system-versions *if* you just want to use the main ctr-httpwn functionality.
 
 # Credits
 * This uses the decompression code from here for ExeFS .code decompression: https://github.com/smealum/ninjhax2.x/blob/master/app_bootloader/source/takeover.c
