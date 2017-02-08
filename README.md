@@ -24,7 +24,7 @@ NOTE: ctr-httpwn <=v1.2 can't affect/change any network requests for adding eSho
 
 # Usage
 
-Do not use this from Old3DS-browserhax if you would've returned to Home Menu afterwards. Do not run this app more than once when ctr-httpwn is already active under the sysmodule.
+Do not use this from Old3DS-browserhax if you would've returned to Home Menu afterwards. Do not run this app more than once when ctr-httpwn is already active under the sysmodule. Do not run this application with a "CFW" {Force L2-cache} option enabled.
 
 Just run the app, then if successful return to hbmenu. For using the system eShop application on <10.0.0-X, you must use HANS-eShop included with the homebrew starter-kit(this should be the one updated on March 20, 2016, or later). For everything else, and for using system-eShop-app on >=v10.0.0-X, you can just return to Home Menu from hbmenu. This can be done by pressing the START button, then use the option for returning to Home Menu without rebooting(you can use HANS if you *really* want to, except for eShop on >=10.0.0-X, returning to Home Menu is not *required*).
 
